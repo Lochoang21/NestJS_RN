@@ -9,6 +9,7 @@ export class OrdersController {
 
   @Post()
   create(@Body() createOrderDto: CreateOrderDto) {
+    console.log(">>> Check user create: ", createOrderDto)
     return this.ordersService.create(createOrderDto);
   }
 
