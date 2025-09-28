@@ -7,13 +7,18 @@ import { Model } from 'mongoose';
 import { hashPasswordHelper } from '@/helpers/util';
 import aqp from 'api-query-params';
 import mongoose from 'mongoose';
+import { CreateAuthDto } from '@/auth/dto/create-auth.dto';
+import { v4 as uuidv4 } from 'uuid';
+import dayjs from 'dayjs';
+import { MailerService } from '@nestjs-modules/mailer';
 
 @Injectable()
 export class UsersService {
 
   constructor(
     @InjectModel(User.name)
-    private userModel: Model<User>
+    private userModel: Model<User>,
+    private readonly mailerService: MailerService
   ) { }
 
   isEmalExist = async (email: string) => {
@@ -78,6 +83,43 @@ export class UsersService {
       return this.userModel.deleteOne({ _id: id }).exec()
     } else {
       throw new BadRequestException("ID không đúng định dạng")
+    }
+  }
+
+  async handleRegister(registerDto: CreateAuthDto) {
+    const { name, email, password } = registerDto;
+    //check email
+    const isExist = await this.isEmalExist(email)
+    if (isExist) {
+      throw new BadRequestException(`Email ${email} đã tồn tại. Vui lòng sử dụng email khác!`)
+    }
+    //hash password
+    const hashPassword = await hashPasswordHelper(password)
+
+    //tao code
+    const codeID= uuidv4()
+
+    //tao user
+    const user = await this.userModel.create({
+      name, email, password: hashPassword, isActive: false,
+      codeId: codeID,
+      codeExpired: dayjs().add(5, 'minutes')
+    })
+
+    //send mail
+    this.mailerService.sendMail({
+      to: user.email, // list of receivers
+        subject: 'Activate your account at NestJS-App',
+        template: 'register',
+        context: {
+          name: user.name ?? user.email,
+          activationCode: codeID,
+        },
+    })
+
+    //tra ve phan hoi
+     return {
+      _id: user._id
     }
   }
 }
