@@ -7,7 +7,7 @@ import { Model } from 'mongoose';
 import { hashPasswordHelper } from '@/helpers/util';
 import aqp from 'api-query-params';
 import mongoose from 'mongoose';
-import { CreateAuthDto } from '@/auth/dto/create-auth.dto';
+import { CheckCodeDto, CreateAuthDto } from '@/auth/dto/create-auth.dto';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -97,7 +97,7 @@ export class UsersService {
     const hashPassword = await hashPasswordHelper(password)
 
     //tao code
-    const codeID= uuidv4()
+    const codeID = uuidv4()
 
     //tao user
     const user = await this.userModel.create({
@@ -109,17 +109,40 @@ export class UsersService {
     //send mail
     this.mailerService.sendMail({
       to: user.email, // list of receivers
-        subject: 'Activate your account at NestJS-App',
-        template: 'register',
-        context: {
-          name: user.name ?? user.email,
-          activationCode: codeID,
-        },
+      subject: 'Activate your account at NestJS-App',
+      template: 'register',
+      context: {
+        name: user.name ?? user.email,
+        activationCode: codeID,
+      },
     })
 
     //tra ve phan hoi
-     return {
+    return {
       _id: user._id
     }
   }
-}
+
+  async handleActive(data: CheckCodeDto) {
+    const user = await this.userModel.findOne({
+      _id: data._id,
+      codeId: data.code
+    })
+    if (!user) {
+      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
+    }
+    //check expire code
+    const isBeforeCheck = dayjs().isBefore(user.codeExpired);
+    if (isBeforeCheck) {
+      //valid update user
+      await this.userModel.updateOne({ _id: data._id }, {
+        isActive: true
+      })
+      return { isBeforeCheck };
+    } else {
+      throw new BadRequestException("")
+    }
+
+
+  }
+} 

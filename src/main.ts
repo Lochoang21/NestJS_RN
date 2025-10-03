@@ -12,8 +12,17 @@ async function bootstrap() {
     forbidNonWhitelisted: true
   }
   ));
+  //config cors
+  app.enableCors(
+    {
+      "origin": true,
+      "methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
+      "preflightContinue": false,
+      credentials: true
+    }
+  );
   app.setGlobalPrefix('api/v1', { exclude: [''] });
-  
+
   await app.listen(port);
 }
 bootstrap();
