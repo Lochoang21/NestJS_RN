@@ -47,4 +47,10 @@ export class AuthService {
   async checkCode(data: CheckCodeDto) {
     return await this.usersService.handleActive(data);
   }
+
+  async retryActive(email: string) {
+    return await this.usersService.retryActive(email);
+  }
+
+  
 }
