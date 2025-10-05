@@ -7,7 +7,7 @@ import { Model } from 'mongoose';
 import { hashPasswordHelper } from '@/helpers/util';
 import aqp from 'api-query-params';
 import mongoose from 'mongoose';
-import { CheckCodeDto, CreateAuthDto } from '@/auth/dto/create-auth.dto';
+import { ChangePasswordDto, CheckCodeDto, CreateAuthDto } from '@/auth/dto/create-auth.dto';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -140,7 +140,7 @@ export class UsersService {
       })
       return { isBeforeCheck };
     } else {
-      throw new BadRequestException("")
+      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
     }
   }
   async retryActive (email: string) {
@@ -175,4 +175,60 @@ export class UsersService {
 
     return {_id: user._id}
   }
+  async retryPassword (email: string) {
+    //check email
+    const user = await this.userModel.findOne({email})
+    if(!user){
+      throw new BadRequestException("Tài khoản không tồn tại")
+    }
+    const codeID = uuidv4()
+
+    //update user
+    await user.updateOne({
+      codeId: codeID,
+      codeExpired: dayjs().add(5, "minutes")
+    })  
+
+    //send email
+     this.mailerService.sendMail({
+      to: user.email, // list of receivers
+      subject: 'Change your password at NestJS-App',
+      template: 'register',
+      context: {
+        name: user.name ?? user.email,
+        activationCode: codeID,
+      },
+    })
+
+    return {_id: user._id, email: user.email}
+  }
+
+
+  async changePassword (data: ChangePasswordDto) {
+
+    if(data.password !== data.confirmPassword){
+      throw new BadRequestException("Mật khẩu và Xác nhận mật khẩu không khớp")
+    }
+    //check email
+    const user = await this.userModel.findOne({email: data.email})
+    if(!user){
+      throw new BadRequestException("Tài khoản không tồn tại")
+    }
+    if(data.code !== user.codeId){
+      throw new BadRequestException("Mã code không hợp lệ")
+    }
+     //check expire code
+    const isBeforeCheck = dayjs().isBefore(user.codeExpired);
+    if (isBeforeCheck) {
+      //valid update user password
+      const newPassword = await hashPasswordHelper(data.password)
+      await user.updateOne({ password: newPassword })
+
+      return { isBeforeCheck };
+    } else {
+      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
+    }
+  }
+  
+  
 } 

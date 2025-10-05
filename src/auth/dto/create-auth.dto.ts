@@ -20,3 +20,22 @@ export class CheckCodeDto {
   @IsNotEmpty({message: "Code không được để trống"})
   code: string;
 }
+
+export class ChangePasswordDto {
+
+  
+
+  @IsNotEmpty({message: "Code không được để trống"})
+  code: string;
+
+   @IsNotEmpty({message: "Password không được để trống"})
+  password: string;
+
+  @IsNotEmpty({message: "ComfirmPassword không được để trống"})
+  confirmPassword: string;
+
+  @IsNotEmpty({message: "email không được để trống"})
+  email: string;
+}
+
+
