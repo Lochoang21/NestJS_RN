@@ -2,17 +2,8 @@ import { Module } from '@nestjs/common';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { UsersModule } from '@/modules/users/users.module';
-import { LikesModule } from '@/modules/likes/likes.module';
-
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
-import { MenuItemOptionsModule } from '@/modules/menu.item.options/menu.item.options.module';
-import { MenuItemsModule } from '@/modules/menu.items/menu.items.module';
-import { MenusModule } from '@/modules/menus/menus.module';
-import { OrderDetailModule } from '@/modules/order.detail/order.detail.module';
-import { OrdersModule } from '@/modules/orders/orders.module';
-import { RestaurantsModule } from '@/modules/restaurants/restaurants.module';
-import { ReviewsModule } from '@/modules/reviews/reviews.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/passport/jwt-auth.guard';
@@ -23,31 +14,31 @@ import { TransformInterceptor } from './core/transform.interceptor';
 @Module({
   imports: [
     UsersModule,
-    LikesModule,
-    MenuItemOptionsModule,
-    MenuItemsModule,
-    MenusModule,
-    OrderDetailModule,
-    OrdersModule,
-    RestaurantsModule,
-    ReviewsModule,
     AuthModule,
     ConfigModule.forRoot({ isGlobal: true }),
 
-    MongooseModule.forRootAsync({
+    TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGODB_URI'),
+        type: 'mysql',
+        host: configService.get<string>('DB_HOST'),
+        port: configService.get<number>('DB_PORT'),
+        username: configService.get<string>('DB_USERNAME'),
+        password: configService.get<string>('DB_PASSWORD'),
+        database: configService.get<string>('DB_NAME'),
+        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        synchronize: true, // Chỉ dùng trong development
+        autoLoadEntities: true,
       }),
       inject: [ConfigService],
     }),
+
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
         transport: {
           host: 'smtp.gmail.com',
           port: 465,
-          // ignoreTLS: true,
           secure: true,
           auth: {
             user: configService.get<string>('MAIL_USER'),
@@ -57,17 +48,15 @@ import { TransformInterceptor } from './core/transform.interceptor';
         defaults: {
           from: '"No Reply" <no-reply@localhost>',
         },
-        // preview: true,
         template: {
           dir: process.cwd() + '/src/mail/templates/',
-          adapter: new HandlebarsAdapter(), // or new PugAdapter() or new EjsAdapter()
+          adapter: new HandlebarsAdapter(),
           options: {
             strict: true,
           },
         },
       }),
       inject: [ConfigService],
-
     }),
   ],
   controllers: [AppController],
@@ -80,7 +69,7 @@ import { TransformInterceptor } from './core/transform.interceptor';
     {
       provide: APP_INTERCEPTOR,
       useClass: TransformInterceptor,
-    }
+    },
   ],
 })
-export class AppModule { }
+export class AppModule {}

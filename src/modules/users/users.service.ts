@@ -1,234 +1,291 @@
+/* eslint-disable prettier/prettier */
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { InjectModel } from '@nestjs/mongoose';
-import { User } from './schemas/user.schema';
-import { Model } from 'mongoose';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from './entities/user.entity';
 import { hashPasswordHelper } from '@/helpers/util';
-import aqp from 'api-query-params';
-import mongoose from 'mongoose';
-import { ChangePasswordDto, CheckCodeDto, CreateAuthDto } from '@/auth/dto/create-auth.dto';
 import { v4 as uuidv4 } from 'uuid';
 import dayjs from 'dayjs';
 import { MailerService } from '@nestjs-modules/mailer';
+import {
+  ChangePasswordDto,
+  CheckCodeDto,
+  CreateAuthDto,
+} from '@/auth/dto/create-auth.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
-
   constructor(
-    @InjectModel(User.name)
-    private userModel: Model<User>,
-    private readonly mailerService: MailerService
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    private readonly mailerService: MailerService,
   ) { }
 
-  isEmalExist = async (email: string) => {
-    const user = await this.userModel.exists({ email })
-    if (user) return true;
-    return false;
-  }
+  isEmailExist = async (email: string) => {
+    const user = await this.userRepository.findOne({ where: { email } });
+    return !!user;
+  };
 
   async create(createUserDto: CreateUserDto) {
     const { name, email, password, phone, address, image } = createUserDto;
-    //check email
-    const isExist = await this.isEmalExist(email)
+
+    // Check email
+    const isExist = await this.isEmailExist(email);
     if (isExist) {
-      throw new BadRequestException(`Email ${email} đã tồn tại. Vui lòng sử dụng email khác!`)
+      throw new BadRequestException(
+        `Email ${email} đã tồn tại. Vui lòng sử dụng email khác!`,
+      );
     }
-    const hashPassword = await hashPasswordHelper(password)
-    const user = await this.userModel.create({
-      name, email, password: hashPassword, phone, address, image
-    })
+
+    const hashPassword = await hashPasswordHelper(password);
+    const user = this.userRepository.create({
+      name,
+      email,
+      password: hashPassword,
+      phone,
+      address,
+      image,
+    });
+
+    const savedUser = await this.userRepository.save(user);
     return {
-      _id: user._id
-    }
+      _id: savedUser.id,
+    };
   }
 
   async findAll(query: string, current: number, pageSize: number) {
-    const { filter, sort } = aqp(query)
+    if (!current) current = 1;
+    if (!pageSize) pageSize = 10;
 
-    if (filter.current) delete filter.current
-    if (filter.pageSize) delete filter.pageSize
+    const skip = (current - 1) * pageSize;
 
-    if (!current) current = 1
-    if (!pageSize) pageSize = 10
+    // Parse query parameters for filtering
+    const where: any = {};
+    if (query) {
+      // Add your filtering logic here based on query string
+      // Example: where.name = Like(`%${query}%`);
+    }
 
-    const totalItems = (await this.userModel.find(filter)).length
-    const totalPage = Math.ceil(totalItems / pageSize)
-    const skip = (current - 1) * (pageSize)
+    const [result, totalItems] = await this.userRepository.findAndCount({
+      where,
+      take: pageSize,
+      skip: skip,
+      select: ['id', 'name', 'email', 'phone', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
+      order: { createdAt: 'DESC' },
+    });
 
-    const result = await this.userModel
-      .find(filter)
-      .limit(pageSize)
-      .skip(skip)
-      .select("-password")
-      .sort(sort as any)
+    const totalPage = Math.ceil(totalItems / pageSize);
+
     return { result, totalPage };
   }
 
-  async findOne(id: string) {
-    return await this.userModel.findById(id).select("-password").exec();
+  async findOne(id: number): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: ['id', 'name', 'email', 'phone', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
+    });
+
+    if (!user) {
+      throw new BadRequestException('Người dùng không tồn tại');
+    }
+
+    return user;
   }
 
-  async findByEmail(email: string) {
-    return await this.userModel.findOne({ email }).exec();
+  async findByEmail(email: string): Promise<User> {
+    return await this.userRepository.findOne({ where: { email } });
   }
 
   async update(updateUserDto: UpdateUserDto) {
-    return await this.userModel.updateOne({ _id: updateUserDto._id }, { ...updateUserDto });
+    const user = await this.userRepository.findOne({
+      where: { id: updateUserDto.id },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Người dùng không tồn tại');
+    }
+
+    await this.userRepository.update(updateUserDto.id, updateUserDto);
+    return { affected: 1 };
   }
 
-  async remove(id: string) {
-    //check id valid
-    if (mongoose.isValidObjectId(id)) {
-      return this.userModel.deleteOne({ _id: id }).exec()
-    } else {
-      throw new BadRequestException("ID không đúng định dạng")
+  async remove(id: number) {
+    const user = await this.userRepository.findOne({ where: { id } });
+
+    if (!user) {
+      throw new BadRequestException('Người dùng không tồn tại');
     }
+
+    return await this.userRepository.delete(id);
   }
 
   async handleRegister(registerDto: CreateAuthDto) {
     const { name, email, password } = registerDto;
-    //check email
-    const isExist = await this.isEmalExist(email)
+
+    // Check email
+    const isExist = await this.isEmailExist(email);
     if (isExist) {
-      throw new BadRequestException(`Email ${email} đã tồn tại. Vui lòng sử dụng email khác!`)
+      throw new BadRequestException(
+        `Email ${email} đã tồn tại. Vui lòng sử dụng email khác!`,
+      );
     }
-    //hash password
-    const hashPassword = await hashPasswordHelper(password)
 
-    //tao code
-    const codeID = uuidv4()
+    // Hash password
+    const hashPassword = await hashPasswordHelper(password);
 
-    //tao user
-    const user = await this.userModel.create({
-      name, email, password: hashPassword, isActive: false,
+    // Generate code
+    const codeID = uuidv4();
+
+    // Create user
+    const user = this.userRepository.create({
+      name,
+      email,
+      password: hashPassword,
+      isActive: false,
       codeId: codeID,
-      codeExpired: dayjs().add(5, 'minutes')
-    })
+      codeExpired: dayjs().add(5, 'minutes').toDate(),
+    });
 
-    //send mail
+    const savedUser = await this.userRepository.save(user);
+
+    // Send mail
     this.mailerService.sendMail({
-      to: user.email, // list of receivers
+      to: savedUser.email,
       subject: 'Activate your account at NestJS-App',
       template: 'register',
       context: {
-        name: user.name ?? user.email,
+        name: savedUser.name ?? savedUser.email,
         activationCode: codeID,
       },
-    })
+    });
 
-    //tra ve phan hoi
+    // Return response
     return {
-      _id: user._id
-    }
+      _id: savedUser.id,
+    };
   }
 
   async handleActive(data: CheckCodeDto) {
-    const user = await this.userModel.findOne({
-      _id: data._id,
-      codeId: data.code
-    })
+    const user = await this.userRepository.findOne({
+      where: {
+        id: data.id,
+        codeId: data.code,
+      },
+    });
+
     if (!user) {
-      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
+      throw new BadRequestException('Mã code không hợp lệ hoặc đã hết hạn');
     }
-    //check expire code
+
+    // Check expire code
     const isBeforeCheck = dayjs().isBefore(user.codeExpired);
     if (isBeforeCheck) {
-      //valid update user
-      await this.userModel.updateOne({ _id: data._id }, {
-        isActive: true
-      })
+      // Valid update user
+      await this.userRepository.update(data._id, {
+        isActive: true,
+      });
       return { isBeforeCheck };
     } else {
-      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
+      throw new BadRequestException('Mã code không hợp lệ hoặc đã hết hạn');
     }
   }
-  async retryActive (email: string) {
-    //check email
-    const user = await this.userModel.findOne({email})
-    if(!user){
-      throw new BadRequestException("Tài khoản không tồn tại")
-    }
-    if(user.isActive){
-      throw new BadRequestException("Tài khoản đã được kích hoạt")
+
+  async retryActive(email: string) {
+    // Check email
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new BadRequestException('Tài khoản không tồn tại');
     }
 
-    
-    const codeID = uuidv4()
+    if (user.isActive) {
+      throw new BadRequestException('Tài khoản đã được kích hoạt');
+    }
 
-    //update user
-    await user.updateOne({
+    const codeID = uuidv4();
+
+    // Update user
+    await this.userRepository.update(user.id, {
       codeId: codeID,
-      codeExpired: dayjs().add(5, "minutes")
-    })  
+      codeExpired: dayjs().add(5, 'minutes').toDate(),
+    });
 
-    //send email
-     this.mailerService.sendMail({
-      to: user.email, // list of receivers
+    // Send email
+    this.mailerService.sendMail({
+      to: user.email,
       subject: 'Activate your account at NestJS-App',
       template: 'register',
       context: {
         name: user.name ?? user.email,
         activationCode: codeID,
       },
-    })
+    });
 
-    return {_id: user._id}
+    return { _id: user.id };
   }
-  async retryPassword (email: string) {
-    //check email
-    const user = await this.userModel.findOne({email})
-    if(!user){
-      throw new BadRequestException("Tài khoản không tồn tại")
+
+  async retryPassword(email: string) {
+    // Check email
+    const user = await this.userRepository.findOne({ where: { email } });
+
+    if (!user) {
+      throw new BadRequestException('Tài khoản không tồn tại');
     }
-    const codeID = uuidv4()
 
-    //update user
-    await user.updateOne({
+    const codeID = uuidv4();
+
+    // Update user
+    await this.userRepository.update(user.id, {
       codeId: codeID,
-      codeExpired: dayjs().add(5, "minutes")
-    })  
+      codeExpired: dayjs().add(5, 'minutes').toDate(),
+    });
 
-    //send email
-     this.mailerService.sendMail({
-      to: user.email, // list of receivers
+    // Send email
+    this.mailerService.sendMail({
+      to: user.email,
       subject: 'Change your password at NestJS-App',
       template: 'register',
       context: {
         name: user.name ?? user.email,
         activationCode: codeID,
       },
-    })
+    });
 
-    return {_id: user._id, email: user.email}
+    return { _id: user.id, email: user.email };
   }
 
+  async changePassword(data: ChangePasswordDto) {
+    if (data.password !== data.confirmPassword) {
+      throw new BadRequestException(
+        'Mật khẩu và Xác nhận mật khẩu không khớp',
+      );
+    }
 
-  async changePassword (data: ChangePasswordDto) {
+    // Check email
+    const user = await this.userRepository.findOne({
+      where: { email: data.email },
+    });
 
-    if(data.password !== data.confirmPassword){
-      throw new BadRequestException("Mật khẩu và Xác nhận mật khẩu không khớp")
+    if (!user) {
+      throw new BadRequestException('Tài khoản không tồn tại');
     }
-    //check email
-    const user = await this.userModel.findOne({email: data.email})
-    if(!user){
-      throw new BadRequestException("Tài khoản không tồn tại")
+
+    if (data.code !== user.codeId) {
+      throw new BadRequestException('Mã code không hợp lệ');
     }
-    if(data.code !== user.codeId){
-      throw new BadRequestException("Mã code không hợp lệ")
-    }
-     //check expire code
+
+    // Check expire code
     const isBeforeCheck = dayjs().isBefore(user.codeExpired);
     if (isBeforeCheck) {
-      //valid update user password
-      const newPassword = await hashPasswordHelper(data.password)
-      await user.updateOne({ password: newPassword })
+      // Valid update user password
+      const newPassword = await hashPasswordHelper(data.password);
+      await this.userRepository.update(user.id, { password: newPassword });
 
       return { isBeforeCheck };
     } else {
-      throw new BadRequestException("Mã code không hợp lệ hoặc đã hết hạn")
+      throw new BadRequestException('Mã code không hợp lệ hoặc đã hết hạn');
     }
   }
-  
-  
-} 
+}

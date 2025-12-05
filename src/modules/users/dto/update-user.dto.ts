@@ -1,12 +1,12 @@
-
-import { IsEmail, IsMongoId, IsNotEmpty, IsOptional } from 'class-validator';
-import { Mongoose } from 'mongoose';
+import { IsNotEmpty, IsOptional, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class UpdateUserDto {
-
-  @IsMongoId({message: "ID không đúng định dạng"})
-  @IsNotEmpty({message: "ID không được để trống"})
-  _id: string;
+  @IsNotEmpty({ message: 'ID không được để trống' })
+  @IsInt({ message: 'ID phải là số nguyên' })
+  @Min(1, { message: 'ID phải lớn hơn 0' })
+  @Type(() => Number)
+  id: number;
 
   @IsOptional()
   name?: string;
