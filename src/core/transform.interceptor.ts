@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { RESPONSE_MESSAGE } from '@/decorator/customize';
 import {
   Injectable,

@@ -51,7 +51,7 @@ export class UsersService {
 
     const savedUser = await this.userRepository.save(user);
     return {
-      _id: savedUser.id,
+      id: savedUser.id,
     };
   }
 
@@ -163,7 +163,7 @@ export class UsersService {
 
     // Return response
     return {
-      _id: savedUser.id,
+      id: savedUser.id,
     };
   }
 
@@ -183,7 +183,7 @@ export class UsersService {
     const isBeforeCheck = dayjs().isBefore(user.codeExpired);
     if (isBeforeCheck) {
       // Valid update user
-      await this.userRepository.update(data._id, {
+      await this.userRepository.update(data.id, {
         isActive: true,
       });
       return { isBeforeCheck };
@@ -223,7 +223,7 @@ export class UsersService {
       },
     });
 
-    return { _id: user.id };
+    return { id: user.id };
   }
 
   async retryPassword(email: string) {
@@ -253,7 +253,7 @@ export class UsersService {
       },
     });
 
-    return { _id: user.id, email: user.email };
+    return { id: user.id, email: user.email };
   }
 
   async changePassword(data: ChangePasswordDto) {

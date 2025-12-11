@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import {
   Controller,
   Request,
@@ -15,6 +16,7 @@ import {
   CheckCodeDto,
   CreateAuthDto,
 } from './dto/create-auth.dto';
+import { EmailDto } from './dto/email.dto';
 import { MailerService } from '@nestjs-modules/mailer';
 
 @Controller('auth')
@@ -22,13 +24,13 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly mailerService: MailerService,
-  ) {}
+  ) { }
 
   @Post('login')
   @Public()
   @UseGuards(LocalAuthGuard)
   @ResponseMessage('Fetch Login')
-  hadleLogin(@Request() req) {
+  handleLogin(@Request() req) {
     return this.authService.login(req.user);
   }
 
@@ -52,14 +54,14 @@ export class AuthController {
 
   @Post('retry-active')
   @Public()
-  retryActive(@Body('email') email: string) {
-    return this.authService.retryActive(email);
+  retryActive(@Body() body: EmailDto) {
+    return this.authService.retryActive(body.email);
   }
 
   @Post('retry-password')
   @Public()
-  retryPassword(@Body('email') email: string) {
-    return this.authService.retryPassword(email);
+  retryPassword(@Body() body: EmailDto) {
+    return this.authService.retryPassword(body.email);
   }
 
   @Post('change-password')
