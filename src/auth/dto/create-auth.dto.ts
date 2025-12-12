@@ -13,11 +13,10 @@ export class CreateAuthDto {
 
 export class CheckCodeDto {
   @IsNotEmpty({ message: 'Id không được để trống' })
-  _id: string;
+  id: number;
 
   @IsNotEmpty({ message: 'Code không được để trống' })
   code: string;
-  id: number;
 }
 
 export class ChangePasswordDto {
@@ -32,4 +31,9 @@ export class ChangePasswordDto {
 
   @IsNotEmpty({ message: 'email không được để trống' })
   email: string;
+}
+
+export class RefreshTokenDto {
+  @IsNotEmpty({ message: 'Refresh token không được để trống' })
+  refreshToken: string;
 }

@@ -38,6 +38,9 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   codeExpired: Date;
 
+  @Column({ nullable: true })
+  refreshToken: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

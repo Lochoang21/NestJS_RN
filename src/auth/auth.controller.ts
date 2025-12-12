@@ -15,6 +15,7 @@ import {
   ChangePasswordDto,
   CheckCodeDto,
   CreateAuthDto,
+  RefreshTokenDto,
 } from './dto/create-auth.dto';
 import { EmailDto } from './dto/email.dto';
 import { MailerService } from '@nestjs-modules/mailer';
@@ -68,6 +69,12 @@ export class AuthController {
   @Public()
   changePassword(@Body() data: ChangePasswordDto) {
     return this.authService.changePassword(data);
+  }
+
+  @Post('refresh-token')
+  @Public()
+  refreshToken(@Body() data: RefreshTokenDto) {
+    return this.authService.refreshToken(data);
   }
 
   @Get('mail')

@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { hashPasswordHelper } from '@/helpers/util';
-import { v4 as uuidv4 } from 'uuid';
+// Generate 6-digit numeric codes for email verification/reset
 import dayjs from 'dayjs';
 import { MailerService } from '@nestjs-modules/mailer';
 import {
@@ -98,6 +98,18 @@ export class UsersService {
     return await this.userRepository.findOne({ where: { email } });
   }
 
+  async findByIdInternal(id: number): Promise<User> {
+    return await this.userRepository.findOne({ where: { id } });
+  }
+
+  async setRefreshToken(id: number, refreshToken: string) {
+    await this.userRepository.update(id, { refreshToken });
+  }
+
+  async clearRefreshToken(id: number) {
+    await this.userRepository.update(id, { refreshToken: null });
+  }
+
   async update(updateUserDto: UpdateUserDto) {
     const user = await this.userRepository.findOne({
       where: { id: updateUserDto.id },
@@ -135,8 +147,8 @@ export class UsersService {
     // Hash password
     const hashPassword = await hashPasswordHelper(password);
 
-    // Generate code
-    const codeID = uuidv4();
+    // Generate 6-digit code
+    const codeID = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Create user
     const user = this.userRepository.create({
@@ -183,7 +195,7 @@ export class UsersService {
     const isBeforeCheck = dayjs().isBefore(user.codeExpired);
     if (isBeforeCheck) {
       // Valid update user
-      await this.userRepository.update(data.id, {
+      await this.userRepository.update({ id: user.id }, {
         isActive: true,
       });
       return { isBeforeCheck };
@@ -204,7 +216,7 @@ export class UsersService {
       throw new BadRequestException('Tài khoản đã được kích hoạt');
     }
 
-    const codeID = uuidv4();
+    const codeID = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Update user
     await this.userRepository.update(user.id, {
@@ -234,7 +246,7 @@ export class UsersService {
       throw new BadRequestException('Tài khoản không tồn tại');
     }
 
-    const codeID = uuidv4();
+    const codeID = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Update user
     await this.userRepository.update(user.id, {
