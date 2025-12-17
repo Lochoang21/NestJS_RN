@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from '@/app.controller';
 import { AppService } from '@/app.service';
 import { UsersModule } from '@/modules/users/users.module';
+import { PostsModule } from '@/modules/posts/posts.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
@@ -10,11 +11,13 @@ import { JwtAuthGuard } from './auth/passport/jwt-auth.guard';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { TransformInterceptor } from './core/transform.interceptor';
+import { FriendsModule } from './modules/friends/friends.module';
 
 @Module({
   imports: [
     UsersModule,
     AuthModule,
+    PostsModule,
     ConfigModule.forRoot({ isGlobal: true }),
 
     TypeOrmModule.forRootAsync({
@@ -60,6 +63,8 @@ import { TransformInterceptor } from './core/transform.interceptor';
       }),
       inject: [ConfigService],
     }),
+
+    FriendsModule,
   ],
   controllers: [AppController],
   providers: [
