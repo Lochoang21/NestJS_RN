@@ -8,10 +8,12 @@ import {
   Delete,
   Query,
   ParseIntPipe,
+  UseGuards,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { JwtAuthGuard } from '@/auth/passport/jwt-auth.guard';
 
 @Controller('users')
 export class UsersController {
@@ -44,5 +46,11 @@ export class UsersController {
   @Delete(':id')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.remove(id);
+  }
+
+  @Post('reset-image')
+  @UseGuards(JwtAuthGuard)
+  resetImage(@Body('id', ParseIntPipe) id: number) {
+    return this.usersService.resetImage(id);
   }
 }

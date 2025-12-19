@@ -54,6 +54,11 @@ export class AuthService {
     };
   }
 
+  async getProfile(userId: number) {
+    // Chỉ trả ra thông tin cơ bản của user (ẩn password, refreshToken, codeId, ...)
+    return await this.usersService.findOne(userId);
+  }
+
   async register(registerDto: CreateAuthDto) {
     return await this.usersService.handleRegister(registerDto);
   }

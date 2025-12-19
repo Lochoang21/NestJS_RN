@@ -300,4 +300,13 @@ export class UsersService {
       throw new BadRequestException('Mã code không hợp lệ hoặc đã hết hạn');
     }
   }
+
+  async resetImage(id: number) {
+    const user = await this.userRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new BadRequestException('Người dùng không tồn tại');
+    }
+    user.image = null;
+    return await this.userRepository.save(user);
+  }
 }

@@ -18,10 +18,6 @@ export class FriendsService {
     private readonly userRepository: Repository<User>,
   ) { }
 
-  create(createFriendDto: CreateFriendDto) {
-    return 'This action adds a new friend';
-  }
-
   async createRequest(
     currentUserId: number,
     createFriendDto: CreateFriendDto,
@@ -40,11 +36,14 @@ export class FriendsService {
       throw new BadRequestException('Người dùng nhận lời mời không tồn tại');
     }
 
+    // Đảm bảo thứ tự userId1 < userId2 để phù hợp constraint trong DB
+    const [userId1, userId2] =
+      currentUserId < targetUserId
+        ? [currentUserId, targetUserId]
+        : [targetUserId, currentUserId];
+
     const existingFriend = await this.friendRepository.findOne({
-      where: [
-        { userId1: currentUserId, userId2: targetUserId },
-        { userId1: targetUserId, userId2: currentUserId },
-      ],
+      where: { userId1, userId2 },
     });
 
     if (existingFriend) {
@@ -55,12 +54,22 @@ export class FriendsService {
         throw new BadRequestException('Lời mời kết bạn đang chờ xử lý');
       }
 
+      // Nếu trước đó đã unfriend hoặc đã huỷ lời mời thì cho phép gửi lại
+      if (
+        existingFriend.status === FriendStatus.UNFRIENDED ||
+        existingFriend.status === FriendStatus.CANCELLED
+      ) {
+        existingFriend.status = FriendStatus.PENDING;
+        existingFriend.actionUserId = currentUserId;
+        return await this.friendRepository.save(existingFriend);
+      }
+
       throw new BadRequestException('Không thể gửi lời mời kết bạn');
     }
 
     const friend = this.friendRepository.create({
-      userId1: currentUserId,
-      userId2: targetUserId,
+      userId1,
+      userId2,
       status: FriendStatus.PENDING,
       actionUserId: currentUserId,
     });
@@ -73,10 +82,14 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
+    const [userId1, userId2] =
+      currentUserId < targetUserId
+        ? [currentUserId, targetUserId]
+        : [targetUserId, currentUserId];
     const friendRequest = await this.friendRepository.findOne({
       where: {
-        userId1: targetUserId,
-        userId2: currentUserId,
+        userId1,
+        userId2,
         status: FriendStatus.PENDING,
       },
     });
@@ -93,10 +106,14 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
+    const [userId1, userId2] =
+      currentUserId < targetUserId
+        ? [currentUserId, targetUserId]
+        : [targetUserId, currentUserId];
     const friendRequest = await this.friendRepository.findOne({
       where: {
-        userId1: currentUserId,
-        userId2: targetUserId,
+        userId1,
+        userId2,
         status: FriendStatus.PENDING,
       },
     });
@@ -113,11 +130,16 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
+    const [userId1, userId2] =
+      currentUserId < targetUserId
+        ? [currentUserId, targetUserId]
+        : [targetUserId, currentUserId];
     const friendship = await this.friendRepository.findOne({
-      where: [
-        { userId1: currentUserId, userId2: targetUserId, status: FriendStatus.ACCEPTED },
-        { userId1: targetUserId, userId2: currentUserId, status: FriendStatus.ACCEPTED },
-      ],
+      where: {
+        userId1,
+        userId2,
+        status: FriendStatus.ACCEPTED,
+      },
     });
     if (!friendship) {
       throw new BadRequestException('Mối quan hệ bạn bè không tồn tại');
@@ -147,9 +169,23 @@ export class FriendsService {
     });
 
     let friends = friendships.map((friendship) => {
-      return friendship.userId1 === currentUserId
-        ? friendship.user2
-        : friendship.user1;
+      const otherUser =
+        friendship.userId1 === currentUserId
+          ? friendship.user2
+          : friendship.user1;
+
+      // Chỉ trả ra các thông tin cơ bản, tương tự UsersService.findAll/findOne
+      return {
+        id: otherUser.id,
+        name: otherUser.name,
+        email: otherUser.email,
+        phone: otherUser.phone,
+        address: otherUser.address,
+        image: otherUser.image,
+        isActive: otherUser.isActive,
+        createdAt: otherUser.createdAt,
+        updatedAt: otherUser.updatedAt,
+      };
     });
 
     // Filter by query (name or email)
@@ -171,7 +207,7 @@ export class FriendsService {
     return { result, totalPage };
   }
 
-  async getFriendPending(currentUserId: number): Promise<Friend[]> {
+  async getFriendPending(currentUserId: number) {
     const pendingRequests = await this.friendRepository.find({
       where: {
         userId2: currentUserId,
@@ -179,7 +215,28 @@ export class FriendsService {
       },
       relations: ['user1'],
     });
-    return pendingRequests;
+
+    // Map lại để ẩn các thông tin nhạy cảm của user1 (người gửi lời mời)
+    return pendingRequests.map((friendship) => ({
+      id: friendship.id,
+      userId1: friendship.userId1,
+      userId2: friendship.userId2,
+      status: friendship.status,
+      actionUserId: friendship.actionUserId,
+      createdAt: friendship.createdAt,
+      updatedAt: friendship.updatedAt,
+      user1: {
+        id: friendship.user1.id,
+        name: friendship.user1.name,
+        email: friendship.user1.email,
+        phone: friendship.user1.phone,
+        address: friendship.user1.address,
+        image: friendship.user1.image,
+        isActive: friendship.user1.isActive,
+        createdAt: friendship.user1.createdAt,
+        updatedAt: friendship.user1.updatedAt,
+      },
+    }));
   }
 
   async getUserFriends(
@@ -202,9 +259,21 @@ export class FriendsService {
     });
 
     let friends = friendships.map((friendship) => {
-      return friendship.userId1 === userId
-        ? friendship.user2
-        : friendship.user1;
+      const otherUser =
+        friendship.userId1 === userId ? friendship.user2 : friendship.user1;
+
+      // Chỉ trả ra các thông tin cơ bản, tương tự UsersService.findAll/findOne
+      return {
+        id: otherUser.id,
+        name: otherUser.name,
+        email: otherUser.email,
+        phone: otherUser.phone,
+        address: otherUser.address,
+        image: otherUser.image,
+        isActive: otherUser.isActive,
+        createdAt: otherUser.createdAt,
+        updatedAt: otherUser.updatedAt,
+      };
     });
 
     // Filter by query (name or email)
@@ -224,21 +293,5 @@ export class FriendsService {
     const result = friends.slice(skip, skip + pageSize);
 
     return { result, totalPage };
-  }
-
-  findAll() {
-    return `This action returns all friends`;
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} friend`;
-  }
-
-  update(id: number, updateFriendDto: UpdateFriendDto) {
-    return `This action updates a #${id} friend`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} friend`;
   }
 }
