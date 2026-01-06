@@ -18,6 +18,7 @@ import { FriendsModule } from './modules/friends/friends.module';
     UsersModule,
     AuthModule,
     PostsModule,
+    FriendsModule,
     ConfigModule.forRoot({ isGlobal: true }),
 
     TypeOrmModule.forRootAsync({
@@ -63,8 +64,6 @@ import { FriendsModule } from './modules/friends/friends.module';
       }),
       inject: [ConfigService],
     }),
-
-    FriendsModule,
   ],
   controllers: [AppController],
   providers: [

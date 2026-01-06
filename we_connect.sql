@@ -219,20 +219,6 @@ CREATE TABLE `messages` (
 -- --------------------------------------------------------
 
 --
--- Cấu trúc bảng cho bảng `message_reactions`
---
-
-CREATE TABLE `message_reactions` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `message_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
-  `reaction_type` varchar(50) NOT NULL COMMENT 'like, love, haha, wow, sad, angry, emoji...',
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
 -- Cấu trúc bảng cho bảng `notifications`
 --
 
@@ -459,16 +445,6 @@ ALTER TABLE `messages`
   ADD KEY `idx_reply_to_message_id` (`reply_to_message_id`);
 
 --
--- Chỉ mục cho bảng `message_reactions`
---
-ALTER TABLE `message_reactions`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_reaction` (`message_id`,`user_id`),
-  ADD KEY `idx_message_id` (`message_id`),
-  ADD KEY `idx_user_id` (`user_id`),
-  ADD KEY `idx_reaction_type` (`reaction_type`);
-
---
 -- Chỉ mục cho bảng `notifications`
 --
 ALTER TABLE `notifications`
@@ -585,12 +561,6 @@ ALTER TABLE `messages`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
--- AUTO_INCREMENT cho bảng `message_reactions`
---
-ALTER TABLE `message_reactions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
-
---
 -- AUTO_INCREMENT cho bảng `notifications`
 --
 ALTER TABLE `notifications`
@@ -695,20 +665,10 @@ ALTER TABLE `likes`
   ADD CONSTRAINT `FK_3f519ed95f775c781a254089171` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
   ADD CONSTRAINT `FK_741df9b9b72f328a6d6f63e79ff` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION;
 
---
--- Các ràng buộc cho bảng `messages`
---
 ALTER TABLE `messages`
   ADD CONSTRAINT `fk_messages_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_messages_reply` FOREIGN KEY (`reply_to_message_id`) REFERENCES `messages` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_messages_sender` FOREIGN KEY (`sender_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
--- Các ràng buộc cho bảng `message_reactions`
---
-ALTER TABLE `message_reactions`
-  ADD CONSTRAINT `fk_message_reactions_message` FOREIGN KEY (`message_id`) REFERENCES `messages` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_message_reactions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Các ràng buộc cho bảng `notifications`

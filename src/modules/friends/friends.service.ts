@@ -8,6 +8,7 @@ import { UpdateFriendDto } from './dto/update-friend.dto';
 import { Friend } from './entities/friend.entity';
 import { User } from '../users/entities/user.entity';
 import { FriendStatus } from './enums/friend-status.enum';
+import { FriendsGateway } from './friends-gateway';
 
 @Injectable()
 export class FriendsService {
@@ -16,6 +17,7 @@ export class FriendsService {
     private readonly friendRepository: Repository<Friend>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly friendsGateway: FriendsGateway,
   ) { }
 
   async createRequest(
@@ -51,6 +53,24 @@ export class FriendsService {
         throw new BadRequestException('Hai người đã là bạn bè');
       }
       if (existingFriend.status === FriendStatus.PENDING) {
+        // Nếu người kia đã gửi lời mời trước → tự động accept luôn (gửi chéo)
+        if (existingFriend.actionUserId !== currentUserId) {
+          existingFriend.status = FriendStatus.ACCEPTED;
+          existingFriend.actionUserId = currentUserId;
+          const savedFriend = await this.friendRepository.save(existingFriend);
+
+          // Gửi sự kiện accepted cho người đã gửi trước
+          this.friendsGateway.emitFriendRequestAccepted(targetUserId, {
+            friendId: savedFriend.id,
+            userId1: savedFriend.userId1,
+            userId2: savedFriend.userId2,
+            status: savedFriend.status,
+            updatedAt: savedFriend.updatedAt,
+          });
+
+          return savedFriend;
+        }
+        // Nếu mình đã gửi lời mời rồi → không cho gửi lại
         throw new BadRequestException('Lời mời kết bạn đang chờ xử lý');
       }
 
@@ -61,7 +81,18 @@ export class FriendsService {
       ) {
         existingFriend.status = FriendStatus.PENDING;
         existingFriend.actionUserId = currentUserId;
-        return await this.friendRepository.save(existingFriend);
+        const savedFriend = await this.friendRepository.save(existingFriend);
+
+        // Gửi sự kiện qua WebSocket
+        this.friendsGateway.emitFriendRequestCreated(targetUserId, {
+          friendId: savedFriend.id,
+          fromUserId: currentUserId,
+          toUserId: targetUserId,
+          status: savedFriend.status,
+          createdAt: savedFriend.createdAt,
+        });
+
+        return savedFriend;
       }
 
       throw new BadRequestException('Không thể gửi lời mời kết bạn');
@@ -74,7 +105,18 @@ export class FriendsService {
       actionUserId: currentUserId,
     });
 
-    return await this.friendRepository.save(friend);
+    const savedFriend = await this.friendRepository.save(friend);
+
+    // Gửi sự kiện qua WebSocket
+    this.friendsGateway.emitFriendRequestCreated(targetUserId, {
+      friendId: savedFriend.id,
+      fromUserId: currentUserId,
+      toUserId: targetUserId,
+      status: savedFriend.status,
+      createdAt: savedFriend.createdAt,
+    });
+
+    return savedFriend; 
   }
 
   async acceptRequest(
@@ -96,9 +138,32 @@ export class FriendsService {
     if (!friendRequest) {
       throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
     }
+
+    // Chỉ người NHẬN lời mời mới được accept (không phải người gửi)
+    if (friendRequest.actionUserId === currentUserId) {
+      throw new BadRequestException('Bạn không thể tự chấp nhận lời mời của chính mình');
+    }
+
     friendRequest.status = FriendStatus.ACCEPTED;
     friendRequest.actionUserId = currentUserId;
-    return await this.friendRepository.save(friendRequest);
+
+    const savedFriendRequest = await this.friendRepository.save(friendRequest);
+
+    // Xác định người gửi lời mời
+    const requesterId = savedFriendRequest.userId1 === currentUserId
+      ? savedFriendRequest.userId2
+      : savedFriendRequest.userId1;
+
+    // Gửi sự kiện qua WebSocket
+    this.friendsGateway.emitFriendRequestAccepted(requesterId, {
+      friendId: savedFriendRequest.id,
+      userId1: savedFriendRequest.userId1,
+      userId2: savedFriendRequest.userId2,
+      status: savedFriendRequest.status,
+      updatedAt: savedFriendRequest.updatedAt,
+    });
+
+    return savedFriendRequest;
   }
 
   async cancelRequest(
@@ -122,7 +187,17 @@ export class FriendsService {
     }
     friendRequest.status = FriendStatus.CANCELLED;
     friendRequest.actionUserId = currentUserId;
-    return await this.friendRepository.save(friendRequest);
+
+    const savedFriendRequest = await this.friendRepository.save(friendRequest);
+    // Gửi sự kiện qua WebSocket
+    this.friendsGateway.emitFriendRequestCancelled(targetUserId, {
+      friendId: savedFriendRequest.id,
+      fromUserId: currentUserId,
+      toUserId: targetUserId,
+      status: savedFriendRequest.status,
+      updatedAt: savedFriendRequest.updatedAt,
+    });
+    return savedFriendRequest;
   }
 
   async unfriend(
@@ -146,7 +221,18 @@ export class FriendsService {
     }
     friendship.status = FriendStatus.UNFRIENDED;
     friendship.actionUserId = currentUserId;
-    return await this.friendRepository.save(friendship);
+
+    const savedFriendship = await this.friendRepository.save(friendship);
+    // Gửi sự kiện qua WebSocket
+    this.friendsGateway.emitUnfriended(targetUserId, {
+      friendId: savedFriendship.id,
+      fromUserId: currentUserId,
+      toUserId: targetUserId,
+      status: savedFriendship.status,
+      updatedAt: savedFriendship.updatedAt,
+    });
+
+    return savedFriendship;
   }
 
   async getFriendsList(
@@ -209,34 +295,52 @@ export class FriendsService {
 
   async getFriendPending(currentUserId: number) {
     const pendingRequests = await this.friendRepository.find({
-      where: {
-        userId2: currentUserId,
-        status: FriendStatus.PENDING,
-      },
-      relations: ['user1'],
+      where: [
+        {
+          userId1: currentUserId,
+          status: FriendStatus.PENDING,
+        },
+        {
+          userId2: currentUserId,
+          status: FriendStatus.PENDING,
+        },
+      ],
+      relations: ['user1', 'user2'],
     });
 
-    // Map lại để ẩn các thông tin nhạy cảm của user1 (người gửi lời mời)
-    return pendingRequests.map((friendship) => ({
-      id: friendship.id,
-      userId1: friendship.userId1,
-      userId2: friendship.userId2,
-      status: friendship.status,
-      actionUserId: friendship.actionUserId,
-      createdAt: friendship.createdAt,
-      updatedAt: friendship.updatedAt,
-      user1: {
-        id: friendship.user1.id,
-        name: friendship.user1.name,
-        email: friendship.user1.email,
-        phone: friendship.user1.phone,
-        address: friendship.user1.address,
-        image: friendship.user1.image,
-        isActive: friendship.user1.isActive,
-        createdAt: friendship.user1.createdAt,
-        updatedAt: friendship.user1.updatedAt,
-      },
-    }));
+    // Lọc ra những lời mời mà mình là người nhận (actionUserId != currentUserId)
+    const receivedRequests = pendingRequests.filter(
+      (friendship) => friendship.actionUserId !== currentUserId,
+    );
+
+    // Map lại để trả về thông tin người gửi lời mời
+    return receivedRequests.map((friendship) => {
+      const sender =
+        friendship.userId1 === currentUserId
+          ? friendship.user2
+          : friendship.user1;
+
+      return {
+        id: friendship.id,
+        userId1: friendship.userId1,
+        userId2: friendship.userId2,
+        status: friendship.status,
+        actionUserId: friendship.actionUserId,
+        createdAt: friendship.createdAt,
+        updatedAt: friendship.updatedAt,
+        sender: {
+          id: sender.id,
+          name: sender.name,
+          email: sender.email,
+          phone: sender.phone,
+          address: sender.address,
+          image: sender.image,
+          isActive: sender.isActive,
+          createdAt: sender.createdAt,
+          updatedAt: sender.updatedAt,
+        },
+      };
+    });
   }
 
   async getUserFriends(
