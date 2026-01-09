@@ -31,7 +31,7 @@ import { FriendsModule } from './modules/friends/friends.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // Chỉ dùng trong development
+        synchronize: false, // Tắt để tránh xung đột schema
         autoLoadEntities: true,
         retryAttempts: 10,
         retryDelay: 3000,

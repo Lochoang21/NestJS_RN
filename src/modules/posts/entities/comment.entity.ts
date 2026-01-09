@@ -24,7 +24,7 @@ export class Comment {
   @JoinColumn({ name: 'post_id' })
   post: Post;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'bigint', unsigned: true })
   userId: number;
 
   @ManyToOne(() => User, (user) => user.comments)

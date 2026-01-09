@@ -30,7 +30,7 @@ SET time_zone = "+00:00";
 CREATE TABLE `comments` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `post_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `parent_comment_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Cho phép reply comment',
   `content` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -50,7 +50,7 @@ CREATE TABLE `conversations` (
   `conversation_type` enum('one_to_one','group') DEFAULT 'one_to_one',
   `name` varchar(200) DEFAULT NULL COMMENT 'Tên nhóm chat (nếu là group chat)',
   `avatar_url` varchar(500) DEFAULT NULL COMMENT 'Avatar nhóm chat',
-  `created_by` int(11) DEFAULT NULL COMMENT 'Người tạo conversation',
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Người tạo conversation',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `is_deleted` tinyint(1) DEFAULT 0,
@@ -74,7 +74,7 @@ INSERT INTO `conversations` (`id`, `conversation_type`, `name`, `avatar_url`, `c
 CREATE TABLE `conversation_participants` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `conversation_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `role` enum('admin','member') DEFAULT 'member' COMMENT 'Vai trò trong nhóm chat',
   `joined_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `last_read_at` timestamp NULL DEFAULT NULL COMMENT 'Lần cuối đọc tin nhắn',
@@ -90,10 +90,10 @@ CREATE TABLE `conversation_participants` (
 
 CREATE TABLE `friends` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `user_id_1` int(11) NOT NULL COMMENT 'User ID nhỏ hơn',
-  `user_id_2` int(11) NOT NULL COMMENT 'User ID lớn hơn',
+  `user_id_1` bigint(20) UNSIGNED NOT NULL COMMENT 'User ID nhỏ hơn',
+  `user_id_2` bigint(20) UNSIGNED NOT NULL COMMENT 'User ID lớn hơn',
   `status` enum('pending','accepted','blocked') DEFAULT 'pending',
-  `action_user_id` int(11) NOT NULL COMMENT 'User thực hiện hành động gần nhất',
+  `action_user_id` bigint(20) UNSIGNED NOT NULL COMMENT 'User thực hiện hành động gần nhất',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ;
@@ -109,7 +109,7 @@ CREATE TABLE `groups` (
   `name` varchar(200) NOT NULL,
   `description` text DEFAULT NULL,
   `cover_url` varchar(500) DEFAULT NULL,
-  `created_by` int(11) NOT NULL,
+  `created_by` bigint(20) UNSIGNED NOT NULL,
   `privacy` enum('public','private','secret') DEFAULT 'public',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -126,7 +126,7 @@ CREATE TABLE `groups` (
 CREATE TABLE `group_comments` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `group_post_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `parent_comment_id` bigint(20) UNSIGNED DEFAULT NULL,
   `content` text NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -138,26 +138,13 @@ CREATE TABLE `group_comments` (
 -- --------------------------------------------------------
 
 --
--- Cấu trúc bảng cho bảng `group_likes`
---
-
-CREATE TABLE `group_likes` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `group_post_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
--- --------------------------------------------------------
-
---
 -- Cấu trúc bảng cho bảng `group_members`
 --
 
 CREATE TABLE `group_members` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `group_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `role` enum('admin','moderator','member') DEFAULT 'member',
   `joined_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `is_deleted` tinyint(1) DEFAULT 0
@@ -172,9 +159,8 @@ CREATE TABLE `group_members` (
 CREATE TABLE `group_posts` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `group_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `content` text NOT NULL,
-  `media_urls` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`media_urls`)),
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `is_deleted` tinyint(1) DEFAULT 0,
@@ -189,9 +175,30 @@ CREATE TABLE `group_posts` (
 
 CREATE TABLE `likes` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `post_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
+  `likeable_id` bigint(20) UNSIGNED NOT NULL COMMENT 'ID của bài viết/bình luận/group post',
+  `likeable_type` enum('Post','Comment','GroupPost','GroupComment') NOT NULL COMMENT 'Loại đối tượng được like',
   `created_at` datetime(6) NOT NULL DEFAULT current_timestamp(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Cấu trúc bảng cho bảng `media`
+--
+
+CREATE TABLE `media` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `mediable_id` bigint(20) UNSIGNED NOT NULL COMMENT 'ID của post/message/group_post',
+  `mediable_type` enum('Post','Message','GroupPost') NOT NULL COMMENT 'Loại đối tượng chứa media',
+  `file_path` varchar(500) NOT NULL COMMENT 'Đường dẫn lưu file',
+  `file_name` varchar(255) DEFAULT NULL COMMENT 'Tên file gốc',
+  `file_type` enum('image','video','audio','file','sticker') NOT NULL COMMENT 'Loại file',
+  `file_size` int(10) UNSIGNED DEFAULT NULL COMMENT 'Kích thước file (bytes)',
+  `mime_type` varchar(100) DEFAULT NULL COMMENT 'MIME type của file',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `is_deleted` tinyint(1) DEFAULT 0,
+  `deleted_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -203,12 +210,9 @@ CREATE TABLE `likes` (
 CREATE TABLE `messages` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `conversation_id` bigint(20) UNSIGNED NOT NULL,
-  `sender_id` int(11) NOT NULL,
+  `sender_id` bigint(20) UNSIGNED NOT NULL,
   `message_type` enum('text','image','video','file','audio','sticker','link') DEFAULT 'text',
   `content` text DEFAULT NULL COMMENT 'Nội dung tin nhắn text',
-  `media_url` varchar(500) DEFAULT NULL COMMENT 'URL file đính kèm',
-  `file_name` varchar(255) DEFAULT NULL COMMENT 'Tên file gốc',
-  `file_size` int(10) UNSIGNED DEFAULT NULL COMMENT 'Kích thước file (bytes)',
   `reply_to_message_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Trả lời tin nhắn nào',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
@@ -224,8 +228,8 @@ CREATE TABLE `messages` (
 
 CREATE TABLE `notifications` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL COMMENT 'Người nhận thông báo',
-  `actor_id` int(11) NOT NULL COMMENT 'Người thực hiện hành động',
+  `user_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Người nhận thông báo',
+  `actor_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Người thực hiện hành động',
   `type` enum('like','comment','friend_request','friend_accept','group_invite','mention','video_call') NOT NULL,
   `reference_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'ID của post/comment/request tương ứng',
   `content` text DEFAULT NULL,
@@ -242,9 +246,8 @@ CREATE TABLE `notifications` (
 
 CREATE TABLE `posts` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `content` text NOT NULL,
-  `media_urls` longtext DEFAULT NULL,
   `privacy` enum('public','friends','private') NOT NULL DEFAULT 'public',
   `is_deleted` tinyint(4) NOT NULL DEFAULT 0,
   `deleted_at` timestamp NULL DEFAULT NULL,
@@ -256,11 +259,11 @@ CREATE TABLE `posts` (
 -- Đang đổ dữ liệu cho bảng `posts`
 --
 
-INSERT INTO `posts` (`id`, `user_id`, `content`, `media_urls`, `privacy`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`) VALUES
-(6, 4, '438297', '\"abc.png\"', 'public', 0, NULL, '2025-12-17 09:58:01.518301', '2025-12-17 09:58:01.518301'),
-(7, 4, 'Đây là bài viết thứ 200', '[\"abcd.png\",\"defas.png\"]', 'public', 0, NULL, '2025-12-17 10:02:55.140401', '2025-12-17 11:02:48.000000'),
-(8, 4, 'Đây là bài viết thứ 5', '[\"abcd.png\",\"defas.png\"]', 'public', 0, NULL, '2025-12-17 10:03:03.164418', '2025-12-17 11:00:48.000000'),
-(9, 4, 'Đây là bài viết thứ 2', '[\"abcd.png\",\"defas.png\"]', 'public', 0, NULL, '2025-12-17 10:13:30.286484', '2025-12-17 10:13:30.286484');
+INSERT INTO `posts` (`id`, `user_id`, `content`, `privacy`, `is_deleted`, `deleted_at`, `created_at`, `updated_at`) VALUES
+(6, 4, '438297', 'public', 0, NULL, '2025-12-17 09:58:01.518301', '2025-12-17 09:58:01.518301'),
+(7, 4, 'Đây là bài viết thứ 200', 'public', 0, NULL, '2025-12-17 10:02:55.140401', '2025-12-17 11:02:48.000000'),
+(8, 4, 'Đây là bài viết thứ 5', 'public', 0, NULL, '2025-12-17 10:03:03.164418', '2025-12-17 11:00:48.000000'),
+(9, 4, 'Đây là bài viết thứ 2', 'public', 0, NULL, '2025-12-17 10:13:30.286484', '2025-12-17 10:13:30.286484');
 
 -- --------------------------------------------------------
 
@@ -269,7 +272,7 @@ INSERT INTO `posts` (`id`, `user_id`, `content`, `media_urls`, `privacy`, `is_de
 --
 
 CREATE TABLE `users` (
-  `id` int(11) NOT NULL,
+  `id` bigint(20) UNSIGNED NOT NULL,
   `name` varchar(255) DEFAULT NULL,
   `email` varchar(255) NOT NULL,
   `password` varchar(255) NOT NULL,
@@ -300,7 +303,7 @@ INSERT INTO `users` (`id`, `name`, `email`, `password`, `address`, `image`, `isA
 CREATE TABLE `video_calls` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `call_id` varchar(100) NOT NULL COMMENT 'UUID cho room video call',
-  `initiator_id` int(11) NOT NULL COMMENT 'Người bắt đầu cuộc gọi',
+  `initiator_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Người bắt đầu cuộc gọi',
   `call_type` enum('one_to_one','group') DEFAULT 'one_to_one',
   `status` enum('initiated','ongoing','ended','cancelled') DEFAULT 'initiated',
   `started_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -317,7 +320,7 @@ CREATE TABLE `video_calls` (
 CREATE TABLE `video_call_participants` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `call_id` bigint(20) UNSIGNED NOT NULL,
-  `user_id` int(11) NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
   `joined_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `left_at` timestamp NULL DEFAULT NULL,
   `status` enum('joined','left','declined') DEFAULT 'joined'
@@ -394,16 +397,6 @@ ALTER TABLE `group_comments`
   ADD KEY `idx_created_at` (`created_at`);
 
 --
--- Chỉ mục cho bảng `group_likes`
---
-ALTER TABLE `group_likes`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_group_like` (`group_post_id`,`user_id`),
-  ADD KEY `idx_group_post_id` (`group_post_id`),
-  ADD KEY `idx_user_id` (`user_id`),
-  ADD KEY `idx_created_at` (`created_at`);
-
---
 -- Chỉ mục cho bảng `group_members`
 --
 ALTER TABLE `group_members`
@@ -429,8 +422,20 @@ ALTER TABLE `group_posts`
 --
 ALTER TABLE `likes`
   ADD PRIMARY KEY (`id`),
-  ADD KEY `FK_741df9b9b72f328a6d6f63e79ff` (`post_id`),
-  ADD KEY `FK_3f519ed95f775c781a254089171` (`user_id`);
+  ADD UNIQUE KEY `unique_like` (`user_id`,`likeable_id`,`likeable_type`),
+  ADD KEY `idx_likeable` (`likeable_id`,`likeable_type`),
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_created_at` (`created_at`);
+
+--
+-- Chỉ mục cho bảng `media`
+--
+ALTER TABLE `media`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_mediable` (`mediable_id`,`mediable_type`),
+  ADD KEY `idx_file_type` (`file_type`),
+  ADD KEY `idx_is_deleted` (`is_deleted`),
+  ADD KEY `idx_created_at` (`created_at`);
 
 --
 -- Chỉ mục cho bảng `messages`
@@ -531,12 +536,6 @@ ALTER TABLE `group_comments`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT cho bảng `group_likes`
---
-ALTER TABLE `group_likes`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
 -- AUTO_INCREMENT cho bảng `group_members`
 --
 ALTER TABLE `group_members`
@@ -553,6 +552,12 @@ ALTER TABLE `group_posts`
 --
 ALTER TABLE `likes`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT cho bảng `media`
+--
+ALTER TABLE `media`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT cho bảng `messages`
@@ -576,7 +581,7 @@ ALTER TABLE `posts`
 -- AUTO_INCREMENT cho bảng `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT cho bảng `video_calls`
@@ -638,13 +643,6 @@ ALTER TABLE `group_comments`
   ADD CONSTRAINT `fk_group_comments_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
--- Các ràng buộc cho bảng `group_likes`
---
-ALTER TABLE `group_likes`
-  ADD CONSTRAINT `fk_group_likes_post` FOREIGN KEY (`group_post_id`) REFERENCES `group_posts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_group_likes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
---
 -- Các ràng buộc cho bảng `group_members`
 --
 ALTER TABLE `group_members`
@@ -662,8 +660,13 @@ ALTER TABLE `group_posts`
 -- Các ràng buộc cho bảng `likes`
 --
 ALTER TABLE `likes`
-  ADD CONSTRAINT `FK_3f519ed95f775c781a254089171` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION,
-  ADD CONSTRAINT `FK_741df9b9b72f328a6d6f63e79ff` FOREIGN KEY (`post_id`) REFERENCES `posts` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION;
+  ADD CONSTRAINT `fk_likes_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Các ràng buộc cho bảng `media`
+--
+-- Lưu ý: Không thể tạo foreign key trực tiếp cho polymorphic relationship
+-- Nên sử dụng application-level validation hoặc triggers
 
 ALTER TABLE `messages`
   ADD CONSTRAINT `fk_messages_conversation` FOREIGN KEY (`conversation_id`) REFERENCES `conversations` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,

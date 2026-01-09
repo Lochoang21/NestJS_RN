@@ -22,15 +22,17 @@ export class FriendsGateway implements OnGatewayConnection {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-  ) {}
+  ) { }
 
   handleConnection(client: Socket) {
+    console.log(`🔌 Client attempting to connect: ${client.id}`);
     try {
       const token =
         (client.handshake.auth as any)?.token ||
         (client.handshake.headers.authorization || '').replace('Bearer ', '');
 
       if (!token) {
+        console.log(`❌ No token provided for client ${client.id}`);
         return client.disconnect();
       }
 
@@ -43,7 +45,9 @@ export class FriendsGateway implements OnGatewayConnection {
 
       // mỗi client join theo userId để nhận event
       client.join(`user:${userId}`);
-    } catch {
+      console.log(`✅ Client ${client.id} connected as user ${userId}`);
+    } catch (error) {
+      console.log(`❌ Token verification failed for client ${client.id}:`, error.message);
       client.disconnect();
     }
   }

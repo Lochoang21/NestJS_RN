@@ -9,7 +9,6 @@ import {
   OneToMany,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
-import { Like } from './like.entity';
 import { Comment } from './comment.entity';
 import { PostPrivacy } from '../enums/post-privacy.enum';
 
@@ -18,7 +17,7 @@ export class Post {
   @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
   id: number;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'bigint', unsigned: true })
   userId: number;
 
   @ManyToOne(() => User)
@@ -27,9 +26,6 @@ export class Post {
 
   @Column({ type: 'text' })
   content: string;
-
-  @Column({ type: 'longtext', nullable: true, name: 'media_urls' })
-  mediaUrls: string;
 
   @Column({
     type: 'enum',
@@ -49,9 +45,6 @@ export class Post {
 
   @Column({ type: 'timestamp', nullable: true, name: 'deleted_at' })
   deletedAt: Date;
-
-  @OneToMany(() => Like, (like) => like.post)
-  likes: Like[];
 
   @OneToMany(() => Comment, (comment) => comment.post)
   comments: Comment[];

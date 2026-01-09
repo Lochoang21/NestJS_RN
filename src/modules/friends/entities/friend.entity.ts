@@ -15,14 +15,14 @@ export class Friend {
   @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
   id: number;
 
-  @Column({ name: 'user_id_1' })
+  @Column({ name: 'user_id_1', type: 'bigint', unsigned: true })
   userId1: number;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'user_id_1' })
   user1: User;
 
-  @Column({ name: 'user_id_2' })
+  @Column({ name: 'user_id_2', type: 'bigint', unsigned: true })
   userId2: number;
 
   @ManyToOne(() => User)
@@ -36,7 +36,7 @@ export class Friend {
   })
   status: FriendStatus;
 
-  @Column({ name: 'action_user_id' })
+  @Column({ name: 'action_user_id', type: 'bigint', unsigned: true })
   actionUserId: number;
 
   @ManyToOne(() => User)

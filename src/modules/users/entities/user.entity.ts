@@ -11,7 +11,7 @@ import { Comment } from '../../posts/entities/comment.entity';
 
 @Entity('users')
 export class User {
-  @PrimaryGeneratedColumn()
+  @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
   id: number;
 
   @Column({ unique: true })

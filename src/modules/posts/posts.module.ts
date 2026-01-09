@@ -6,9 +6,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Post } from './entities/post.entity';
 import { Like } from './entities/like.entity';
 import { Comment } from './entities/comment.entity';
+import { Media } from './entities/media.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Post, Like, Comment])],
+  imports: [TypeOrmModule.forFeature([Post, Like, Comment, Media])],
   controllers: [PostsController],
   providers: [PostsService],
   exports: [PostsService],
