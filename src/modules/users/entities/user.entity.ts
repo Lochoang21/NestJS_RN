@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Like } from '../../posts/entities/like.entity';
 import { Comment } from '../../posts/entities/comment.entity';
+import { UserToken } from './user-token.entity';
 
 @Entity('users')
 export class User {
@@ -50,9 +51,18 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
+  @Column({ type: 'text', nullable: true })
+  bio: string;
+
+  @Column({ name: 'last_active_at', type: 'timestamp', nullable: true })
+  lastActiveAt: Date | null;
+
   @OneToMany(() => Like, (like) => like.user)
   likes: Like[];
 
   @OneToMany(() => Comment, (comment) => comment.user)
   comments: Comment[];
+
+  @OneToMany(() => UserToken, (token) => token.user)
+  tokens: UserToken[];
 }

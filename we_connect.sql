@@ -51,6 +51,7 @@ CREATE TABLE `conversations` (
   `name` varchar(200) DEFAULT NULL COMMENT 'Tên nhóm chat (nếu là group chat)',
   `avatar_url` varchar(500) DEFAULT NULL COMMENT 'Avatar nhóm chat',
   `created_by` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Người tạo conversation',
+  `last_message_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'Tin nhắn cuối cùng trong cuộc hội thoại',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `is_deleted` tinyint(1) DEFAULT 0,
@@ -232,6 +233,7 @@ CREATE TABLE `notifications` (
   `actor_id` bigint(20) UNSIGNED NOT NULL COMMENT 'Người thực hiện hành động',
   `type` enum('like','comment','friend_request','friend_accept','group_invite','mention','video_call') NOT NULL,
   `reference_id` bigint(20) UNSIGNED DEFAULT NULL COMMENT 'ID của post/comment/request tương ứng',
+  `reference_type` enum('Post','Comment','Group','GroupPost','GroupComment','User','VideoCall') DEFAULT NULL COMMENT 'Loại đối tượng mà reference_id trỏ tới',
   `content` text DEFAULT NULL,
   `is_read` tinyint(1) DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
@@ -278,13 +280,15 @@ CREATE TABLE `users` (
   `password` varchar(255) NOT NULL,
   `address` varchar(255) DEFAULT NULL,
   `image` varchar(255) DEFAULT NULL,
+  `bio` text DEFAULT NULL COMMENT 'Thông tin giới thiệu trang cá nhân',
   `isActive` tinyint(4) NOT NULL DEFAULT 0,
   `codeId` varchar(255) DEFAULT NULL,
   `codeExpired` datetime DEFAULT NULL,
   `createdAt` datetime(6) NOT NULL DEFAULT current_timestamp(6),
   `updatedAt` datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE current_timestamp(6),
   `phone` varchar(255) DEFAULT NULL,
-  `refreshToken` varchar(255) DEFAULT NULL
+  `refreshToken` varchar(255) DEFAULT NULL,
+  `last_active_at` timestamp NULL DEFAULT NULL COMMENT 'Lần hoạt động gần nhất'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -293,6 +297,25 @@ CREATE TABLE `users` (
 
 INSERT INTO `users` (`id`, `name`, `email`, `password`, `address`, `image`, `isActive`, `codeId`, `codeExpired`, `createdAt`, `updatedAt`, `phone`, `refreshToken`) VALUES
 (4, 'David Bao Loc', 'lochoang2101@gmail.com', '$2b$10$xv1kBKBd0YFeZf/pvTdGTORLbQvlp01xfGKfeMebVWxHqTCiyRVRW', NULL, NULL, 1, '837597', '2025-12-15 16:08:21', '2025-12-15 16:02:26.124089', '2025-12-17 10:59:30.000000', NULL, 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VybmFtZSI6ImxvY2hvYW5nMjEwMUBnbWFpbC5jb20iLCJzdWIiOjQsImlhdCI6MTc2NTk0Mzk3MCwiZXhwIjoxNzY2NTQ4NzcwfQ.i8y6vKIC_V3zmM6Pqv1RNOquetx6sY_d3e_uBWACudE');
+
+-- --------------------------------------------------------
+
+--
+-- Cấu trúc bảng cho bảng `user_tokens`
+--
+
+CREATE TABLE `user_tokens` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
+  `refresh_token` varchar(255) NOT NULL,
+  `device_name` varchar(255) DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(500) DEFAULT NULL,
+  `expires_at` datetime DEFAULT NULL,
+  `is_revoked` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
 
@@ -349,7 +372,8 @@ ALTER TABLE `conversations`
   ADD KEY `idx_conversation_type` (`conversation_type`),
   ADD KEY `idx_created_by` (`created_by`),
   ADD KEY `idx_is_deleted` (`is_deleted`),
-  ADD KEY `idx_updated_at` (`updated_at`);
+  ADD KEY `idx_updated_at` (`updated_at`),
+  ADD KEY `idx_last_message_id` (`last_message_id`);
 
 --
 -- Chỉ mục cho bảng `conversation_participants`
@@ -459,7 +483,8 @@ ALTER TABLE `notifications`
   ADD KEY `idx_created_at` (`created_at`),
   ADD KEY `idx_is_deleted` (`is_deleted`),
   ADD KEY `idx_composite_user_read` (`user_id`,`is_read`,`created_at`),
-  ADD KEY `fk_notifications_actor` (`actor_id`);
+  ADD KEY `fk_notifications_actor` (`actor_id`),
+  ADD KEY `idx_reference` (`reference_type`,`reference_id`);
 
 --
 -- Chỉ mục cho bảng `posts`
@@ -473,7 +498,18 @@ ALTER TABLE `posts`
 --
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `IDX_97672ac88f789774dd47f7c8be` (`email`);
+  ADD UNIQUE KEY `IDX_97672ac88f789774dd47f7c8be` (`email`),
+  ADD KEY `idx_last_active_at` (`last_active_at`);
+
+--
+-- Chỉ mục cho bảng `user_tokens`
+--
+ALTER TABLE `user_tokens`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_tokens_user_id` (`user_id`),
+  ADD KEY `idx_user_tokens_refresh_token` (`refresh_token`),
+  ADD KEY `idx_user_tokens_is_revoked` (`is_revoked`),
+  ADD KEY `idx_user_tokens_expires_at` (`expires_at`);
 
 --
 -- Chỉ mục cho bảng `video_calls`
@@ -584,6 +620,12 @@ ALTER TABLE `users`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
+-- AUTO_INCREMENT cho bảng `user_tokens`
+--
+ALTER TABLE `user_tokens`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT cho bảng `video_calls`
 --
 ALTER TABLE `video_calls`
@@ -611,7 +653,8 @@ ALTER TABLE `comments`
 -- Các ràng buộc cho bảng `conversations`
 --
 ALTER TABLE `conversations`
-  ADD CONSTRAINT `fk_conversations_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+  ADD CONSTRAINT `fk_conversations_creator` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_conversations_last_message` FOREIGN KEY (`last_message_id`) REFERENCES `messages` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
 -- Các ràng buộc cho bảng `conversation_participants`
@@ -685,6 +728,12 @@ ALTER TABLE `notifications`
 --
 ALTER TABLE `posts`
   ADD CONSTRAINT `FK_c4f9a7bd77b489e711277ee5986` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+--
+-- Các ràng buộc cho bảng `user_tokens`
+--
+ALTER TABLE `user_tokens`
+  ADD CONSTRAINT `fk_user_tokens_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 --
 -- Các ràng buộc cho bảng `video_calls`
