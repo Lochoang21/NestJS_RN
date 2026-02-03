@@ -65,7 +65,7 @@ export class PostsService {
     return FileType.FILE;
   }
 
-  async findAll(query: string, current: number, pageSize: number) {
+  async findAll(query: string, current: number, pageSize: number, currentUserId?: number) {
     if (!current) current = 1;
     if (!pageSize) pageSize = 10;
 
@@ -99,7 +99,7 @@ export class PostsService {
       order: { createdAt: 'DESC' },
     });
 
-    // Load media for each post
+    // Load media, likes count, comments, and isLiked for each post
     const result = await Promise.all(
       posts.map(async (post) => {
         const media = await this.mediaRepository.find({
@@ -111,9 +111,61 @@ export class PostsService {
           select: ['id', 'filePath', 'fileType', 'fileName'],
         });
 
+        // Count total likes
+        const likesCount = await this.likeRepository.count({
+          where: {
+            likeableId: post.id,
+            likeableType: LikeableType.POST,
+          },
+        });
+
+        // Check if current user liked this post
+        let isLiked = false;
+        if (currentUserId) {
+          const userLike = await this.likeRepository.findOne({
+            where: {
+              likeableId: post.id,
+              likeableType: LikeableType.POST,
+              userId: currentUserId,
+            },
+          });
+          isLiked = !!userLike;
+        }
+
+        // Get comments with user info
+        const comments = await this.commentRepository.find({
+          where: {
+            postId: post.id,
+            isDeleted: 0,
+          },
+          relations: ['user'],
+          select: {
+            id: true,
+            postId: true,
+            userId: true,
+            parentCommentId: true,
+            content: true,
+            createdAt: true,
+            updatedAt: true,
+            user: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          order: { createdAt: 'ASC' },
+        });
+
+        const commentsCount = comments.length;
+
         return {
           ...post,
           mediaUrls: media.map((m) => m.filePath),
+          likesCount,
+          isLiked,
+          comments,
+          commentsCount,
         };
       }),
     );
@@ -123,7 +175,7 @@ export class PostsService {
     return { result, totalPage };
   }
 
-  async findByAuthor(userId: number, query: string, current: number, pageSize: number) {
+  async findByAuthor(userId: number, query: string, current: number, pageSize: number, currentUserId?: number) {
     if (!current) current = 1;
     if (!pageSize) pageSize = 10;
 
@@ -157,7 +209,7 @@ export class PostsService {
       order: { createdAt: 'DESC' },
     });
 
-    // Load media for each post
+    // Load media, likes count, comments, and isLiked for each post
     const result = await Promise.all(
       posts.map(async (post) => {
         const media = await this.mediaRepository.find({
@@ -169,9 +221,61 @@ export class PostsService {
           select: ['id', 'filePath', 'fileType', 'fileName'],
         });
 
+        // Count total likes
+        const likesCount = await this.likeRepository.count({
+          where: {
+            likeableId: post.id,
+            likeableType: LikeableType.POST,
+          },
+        });
+
+        // Check if current user liked this post
+        let isLiked = false;
+        if (currentUserId) {
+          const userLike = await this.likeRepository.findOne({
+            where: {
+              likeableId: post.id,
+              likeableType: LikeableType.POST,
+              userId: currentUserId,
+            },
+          });
+          isLiked = !!userLike;
+        }
+
+        // Get comments with user info
+        const comments = await this.commentRepository.find({
+          where: {
+            postId: post.id,
+            isDeleted: 0,
+          },
+          relations: ['user'],
+          select: {
+            id: true,
+            postId: true,
+            userId: true,
+            parentCommentId: true,
+            content: true,
+            createdAt: true,
+            updatedAt: true,
+            user: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+            },
+          },
+          order: { createdAt: 'ASC' },
+        });
+
+        const commentsCount = comments.length;
+
         return {
           ...post,
           mediaUrls: media.map((m) => m.filePath),
+          likesCount,
+          isLiked,
+          comments,
+          commentsCount,
         };
       }),
     );
@@ -207,7 +311,7 @@ export class PostsService {
     return images.map((img) => img.filePath);
   }
 
-  async findOne(id: number): Promise<any> {
+  async findOne(id: number, currentUserId?: number): Promise<any> {
     const post = await this.postRepository.findOne({
       where: { id, isDeleted: 0 },
       relations: ['user'],
@@ -241,9 +345,61 @@ export class PostsService {
       select: ['id', 'filePath', 'fileType', 'fileName'],
     });
 
+    // Count total likes
+    const likesCount = await this.likeRepository.count({
+      where: {
+        likeableId: post.id,
+        likeableType: LikeableType.POST,
+      },
+    });
+
+    // Check if current user liked this post
+    let isLiked = false;
+    if (currentUserId) {
+      const userLike = await this.likeRepository.findOne({
+        where: {
+          likeableId: post.id,
+          likeableType: LikeableType.POST,
+          userId: currentUserId,
+        },
+      });
+      isLiked = !!userLike;
+    }
+
+    // Get comments with user info
+    const comments = await this.commentRepository.find({
+      where: {
+        postId: post.id,
+        isDeleted: 0,
+      },
+      relations: ['user'],
+      select: {
+        id: true,
+        postId: true,
+        userId: true,
+        parentCommentId: true,
+        content: true,
+        createdAt: true,
+        updatedAt: true,
+        user: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+        },
+      },
+      order: { createdAt: 'ASC' },
+    });
+
+    const commentsCount = comments.length;
+
     return {
       ...post,
       mediaUrls: media.map((m) => m.filePath),
+      likesCount,
+      isLiked,
+      comments,
+      commentsCount,
     };
   }
 
@@ -322,7 +478,9 @@ export class PostsService {
     });
 
     if (existingLike) {
-      throw new BadRequestException('Bạn đã thích bài viết này rồi');
+      // If already liked, unlike it (toggle behavior)
+      await this.likeRepository.remove(existingLike);
+      return { message: 'Đã bỏ thích bài viết', liked: false };
     }
 
     // Create new like
@@ -333,7 +491,7 @@ export class PostsService {
     });
     await this.likeRepository.save(like);
 
-    return { message: 'Đã thích bài viết' };
+    return { message: 'Đã thích bài viết', liked: true };
   }
 
   async unlikePost(postId: number, userId: number) {
@@ -375,7 +533,29 @@ export class PostsService {
     if (!post) {
       throw new BadRequestException('Bài viết không tồn tại');
     }
-    const comment = this.commentRepository.create({ postId, userId, content, parentCommentId });
+
+    // Validate parent comment if provided
+    if (parentCommentId) {
+      const parentComment = await this.commentRepository.findOne({
+        where: { id: parentCommentId, isDeleted: 0 },
+      });
+
+      if (!parentComment) {
+        throw new BadRequestException('Bình luận cha không tồn tại');
+      }
+
+      // Convert both to number for comparison
+      if (Number(parentComment.postId) !== Number(postId)) {
+        throw new BadRequestException('Bình luận cha không thuộc bài viết này');
+      }
+    }
+
+    const comment = this.commentRepository.create({
+      postId,
+      userId,
+      content,
+      parentCommentId: parentCommentId || null
+    });
     await this.commentRepository.save(comment);
     return { message: 'Bình luận bài viết thành công' };
   }

@@ -23,8 +23,10 @@ export class PostsController {
     @Query('query') query: string,
     @Query('current') current: string,
     @Query('pageSize') pageSize: string,
+    @Request() req,
   ) {
-    return this.postsService.findAll(query, +current, +pageSize);
+    const userId = req.user?.id; // Get user ID if authenticated
+    return this.postsService.findAll(query, +current, +pageSize, userId);
   }
 
   @Get('author/:userId')
@@ -34,8 +36,10 @@ export class PostsController {
     @Query('query') query: string,
     @Query('current') current: string,
     @Query('pageSize') pageSize: string,
+    @Request() req,
   ) {
-    return this.postsService.findByAuthor(userId, query, +current, +pageSize);
+    const currentUserId = req.user?.id; // Get user ID if authenticated
+    return this.postsService.findByAuthor(userId, query, +current, +pageSize, currentUserId);
   }
 
   @Get('me')
@@ -47,7 +51,7 @@ export class PostsController {
     @Query('current') current: string,
     @Query('pageSize') pageSize: string,
   ) {
-    return this.postsService.findByAuthor(req.user.id, query, +current, +pageSize);
+    return this.postsService.findByAuthor(req.user.id, query, +current, +pageSize, req.user.id);
   }
 
   @Get('/author/:userId/images')
@@ -58,8 +62,9 @@ export class PostsController {
 
   @Get(':id')
   @ResponseMessage('Lấy bài viết thành công')
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.postsService.findOne(id);
+  findOne(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    const userId = req.user?.id; // Get user ID if authenticated
+    return this.postsService.findOne(id, userId);
   }
 
   @Patch(':id')

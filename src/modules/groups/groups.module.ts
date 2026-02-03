@@ -14,4 +14,4 @@ import { GroupComment } from './entities/group-comment.entity';
   controllers: [GroupsController],
   providers: [GroupsService],
 })
-export class GroupsModule { }
+export class GroupsModule {}
