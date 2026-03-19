@@ -18,6 +18,9 @@ import { CreatePostCommentDto, CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { JwtAuthGuard } from 'src/auth/passport/jwt-auth.guard';
 import { ResponseMessage } from 'src/decorator/customize';
+import { ApiTags } from '@nestjs/swagger';
+
+@ApiTags('posts')
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postsService: PostsService) { }

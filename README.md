@@ -38,3 +38,28 @@ The project is configured to auto-create MySQL tables from entities when running
 
 Set `NODE_ENV=production` and `DB_SYNC=false`, then manage schema using migrations.
 
+## Swagger API Documentation
+
+Swagger is integrated and generated directly from your NestJS controllers and DTOs.
+
+### Access URL
+
+- Default URL: `/api/docs`
+- Example local URL: `http://localhost:8080/api/docs`
+
+### Environment Config
+
+- `SWAGGER_ENABLE=true|false`
+- `SWAGGER_PATH=api/docs`
+
+### Auto-Update Behavior
+
+Swagger docs are re-generated every time the app starts.
+
+When running with `npm run start:dev` (watch mode), any new API/controller/DTO change triggers rebuild and docs update automatically.
+
+### Notes For Better DTO Documentation
+
+- Keep using class-validator decorators in DTOs.
+- Nest Swagger plugin is enabled in `nest-cli.json` so schema metadata is inferred automatically.
+

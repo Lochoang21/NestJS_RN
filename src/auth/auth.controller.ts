@@ -19,7 +19,9 @@ import {
 } from './dto/create-auth.dto';
 import { EmailDto } from './dto/email.dto';
 import { MailerService } from '@nestjs-modules/mailer';
+import { ApiTags } from '@nestjs/swagger';
 
+@ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(

@@ -1,24 +1,55 @@
-/* eslint-disable prettier/prettier */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateFriendDto } from './dto/create-friend.dto';
-import { UpdateFriendDto } from './dto/update-friend.dto';
+import { QueryFriendDto } from './dto/query-friend.dto';
 import { Friend } from './entities/friend.entity';
-import { User } from '../users/entities/user.entity';
 import { FriendStatus } from './enums/friend-status.enum';
 import { FriendsGateway } from './friends-gateway';
+import { UsersService } from '../users/users.service';
+import {
+  PaginatedFriends,
+  PendingRequestItem,
+} from './interfaces/friend.interface';
 
 @Injectable()
 export class FriendsService {
   constructor(
     @InjectRepository(Friend)
     private readonly friendRepository: Repository<Friend>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
+
+    // Fix #3: Dùng UsersService thay vì inject trực tiếp UserRepository
+    // UsersModule phải export UsersService để dùng được ở đây
+    private readonly usersService: UsersService,
+
     private readonly friendsGateway: FriendsGateway,
-  ) { }
+  ) {}
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Normalize thứ tự userId để đảm bảo constraint unique trong DB.
+   * Luôn giữ userId nhỏ hơn ở vị trí userId1.
+   */
+  private normalizeUserIds(
+    a: number,
+    b: number,
+  ): { userId1: number; userId2: number } {
+    return a < b ? { userId1: a, userId2: b } : { userId1: b, userId2: a };
+  }
+
+  /**
+   * Lấy friendId của người còn lại trong cặp quan hệ.
+   */
+  private getOtherId(record: Friend, currentUserId: number): number {
+    return record.userId1 === currentUserId ? record.userId2 : record.userId1;
+  }
+
+  // ─── Mutations ────────────────────────────────────────────────────────────
 
   async createRequest(
     currentUserId: number,
@@ -27,96 +58,95 @@ export class FriendsService {
     const { targetUserId } = createFriendDto;
 
     if (currentUserId === targetUserId) {
-      throw new BadRequestException('Bạn không thể gửi lời mời kết bạn cho chính mình');
+      throw new BadRequestException(
+        'Bạn không thể gửi lời mời kết bạn cho chính mình',
+      );
     }
 
-    const targetUser = await this.userRepository.findOne({
-      where: { id: targetUserId },
-    });
+    // Fix #3: Dùng UsersService.findOne thay vì query trực tiếp UserRepository
+    await this.usersService.findOne(targetUserId);
 
-    if (!targetUser) {
-      throw new BadRequestException('Người dùng nhận lời mời không tồn tại');
-    }
+    const { userId1, userId2 } = this.normalizeUserIds(
+      currentUserId,
+      targetUserId,
+    );
 
-    // Đảm bảo thứ tự userId1 < userId2 để phù hợp constraint trong DB
-    const [userId1, userId2] =
-      currentUserId < targetUserId
-        ? [currentUserId, targetUserId]
-        : [targetUserId, currentUserId];
+    // Fix #7: Wrap toàn bộ logic đọc-ghi trong transaction để đảm bảo
+    // DB và WebSocket event luôn consistent với nhau
+    return this.friendRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Friend);
 
-    const existingFriend = await this.friendRepository.findOne({
-      where: { userId1, userId2 },
-    });
+      const existing = await repo.findOne({ where: { userId1, userId2 } });
 
-    if (existingFriend) {
-      if (existingFriend.status === FriendStatus.ACCEPTED) {
-        throw new BadRequestException('Hai người đã là bạn bè');
-      }
-      if (existingFriend.status === FriendStatus.PENDING) {
-        // Nếu người kia đã gửi lời mời trước → tự động accept luôn (gửi chéo)
-        if (existingFriend.actionUserId !== currentUserId) {
-          existingFriend.status = FriendStatus.ACCEPTED;
-          existingFriend.actionUserId = currentUserId;
-          const savedFriend = await this.friendRepository.save(existingFriend);
+      if (existing) {
+        if (existing.status === FriendStatus.ACCEPTED) {
+          throw new BadRequestException('Hai người đã là bạn bè');
+        }
 
-          // Gửi sự kiện accepted cho người đã gửi trước
-          this.friendsGateway.emitFriendRequestAccepted(targetUserId, {
-            friendId: savedFriend.id,
-            userId1: savedFriend.userId1,
-            userId2: savedFriend.userId2,
-            status: savedFriend.status,
-            updatedAt: savedFriend.updatedAt,
+        if (existing.status === FriendStatus.PENDING) {
+          // Người kia đã gửi trước → gửi chéo → tự động accept
+          if (existing.actionUserId !== currentUserId) {
+            existing.status = FriendStatus.ACCEPTED;
+            existing.actionUserId = currentUserId;
+            const saved = await repo.save(existing);
+
+            this.friendsGateway.emitFriendRequestAccepted(targetUserId, {
+              friendId: saved.id,
+              userId1: saved.userId1,
+              userId2: saved.userId2,
+              status: saved.status,
+              updatedAt: saved.updatedAt,
+            });
+
+            return saved;
+          }
+          // Mình đã gửi rồi → không cho gửi lại
+          throw new BadRequestException('Lời mời kết bạn đang chờ xử lý');
+        }
+
+        // UNFRIENDED hoặc CANCELLED → cho phép gửi lại
+        if (
+          existing.status === FriendStatus.UNFRIENDED ||
+          existing.status === FriendStatus.CANCELLED
+        ) {
+          existing.status = FriendStatus.PENDING;
+          existing.actionUserId = currentUserId;
+          const saved = await repo.save(existing);
+
+          this.friendsGateway.emitFriendRequestCreated(targetUserId, {
+            friendId: saved.id,
+            fromUserId: currentUserId,
+            toUserId: targetUserId,
+            status: saved.status,
+            createdAt: saved.createdAt,
           });
 
-          return savedFriend;
+          return saved;
         }
-        // Nếu mình đã gửi lời mời rồi → không cho gửi lại
-        throw new BadRequestException('Lời mời kết bạn đang chờ xử lý');
+
+        throw new BadRequestException('Không thể gửi lời mời kết bạn');
       }
 
-      // Nếu trước đó đã unfriend hoặc đã huỷ lời mời thì cho phép gửi lại
-      if (
-        existingFriend.status === FriendStatus.UNFRIENDED ||
-        existingFriend.status === FriendStatus.CANCELLED
-      ) {
-        existingFriend.status = FriendStatus.PENDING;
-        existingFriend.actionUserId = currentUserId;
-        const savedFriend = await this.friendRepository.save(existingFriend);
+      // Chưa có record → tạo mới
+      const friend = repo.create({
+        userId1,
+        userId2,
+        status: FriendStatus.PENDING,
+        actionUserId: currentUserId,
+      });
 
-        // Gửi sự kiện qua WebSocket
-        this.friendsGateway.emitFriendRequestCreated(targetUserId, {
-          friendId: savedFriend.id,
-          fromUserId: currentUserId,
-          toUserId: targetUserId,
-          status: savedFriend.status,
-          createdAt: savedFriend.createdAt,
-        });
+      const saved = await repo.save(friend);
 
-        return savedFriend;
-      }
+      this.friendsGateway.emitFriendRequestCreated(targetUserId, {
+        friendId: saved.id,
+        fromUserId: currentUserId,
+        toUserId: targetUserId,
+        status: saved.status,
+        createdAt: saved.createdAt,
+      });
 
-      throw new BadRequestException('Không thể gửi lời mời kết bạn');
-    }
-
-    const friend = this.friendRepository.create({
-      userId1,
-      userId2,
-      status: FriendStatus.PENDING,
-      actionUserId: currentUserId,
+      return saved;
     });
-
-    const savedFriend = await this.friendRepository.save(friend);
-
-    // Gửi sự kiện qua WebSocket
-    this.friendsGateway.emitFriendRequestCreated(targetUserId, {
-      friendId: savedFriend.id,
-      fromUserId: currentUserId,
-      toUserId: targetUserId,
-      status: savedFriend.status,
-      createdAt: savedFriend.createdAt,
-    });
-
-    return savedFriend; 
   }
 
   async acceptRequest(
@@ -124,46 +154,46 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
-    const [userId1, userId2] =
-      currentUserId < targetUserId
-        ? [currentUserId, targetUserId]
-        : [targetUserId, currentUserId];
-    const friendRequest = await this.friendRepository.findOne({
-      where: {
-        userId1,
-        userId2,
-        status: FriendStatus.PENDING,
-      },
+    const { userId1, userId2 } = this.normalizeUserIds(
+      currentUserId,
+      targetUserId,
+    );
+
+    // Fix #7: Transaction đảm bảo save và emit luôn nhất quán
+    return this.friendRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Friend);
+
+      const friendRequest = await repo.findOne({
+        where: { userId1, userId2, status: FriendStatus.PENDING },
+      });
+
+      if (!friendRequest) {
+        throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
+      }
+
+      // Chỉ người NHẬN mới được accept (actionUserId là người đã gửi)
+      if (friendRequest.actionUserId === currentUserId) {
+        throw new BadRequestException(
+          'Bạn không thể tự chấp nhận lời mời của chính mình',
+        );
+      }
+
+      friendRequest.status = FriendStatus.ACCEPTED;
+      friendRequest.actionUserId = currentUserId;
+      const saved = await repo.save(friendRequest);
+
+      // Thông báo cho người đã gửi lời mời
+      const requesterId = this.getOtherId(saved, currentUserId);
+      this.friendsGateway.emitFriendRequestAccepted(requesterId, {
+        friendId: saved.id,
+        userId1: saved.userId1,
+        userId2: saved.userId2,
+        status: saved.status,
+        updatedAt: saved.updatedAt,
+      });
+
+      return saved;
     });
-    if (!friendRequest) {
-      throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
-    }
-
-    // Chỉ người NHẬN lời mời mới được accept (không phải người gửi)
-    if (friendRequest.actionUserId === currentUserId) {
-      throw new BadRequestException('Bạn không thể tự chấp nhận lời mời của chính mình');
-    }
-
-    friendRequest.status = FriendStatus.ACCEPTED;
-    friendRequest.actionUserId = currentUserId;
-
-    const savedFriendRequest = await this.friendRepository.save(friendRequest);
-
-    // Xác định người gửi lời mời
-    const requesterId = savedFriendRequest.userId1 === currentUserId
-      ? savedFriendRequest.userId2
-      : savedFriendRequest.userId1;
-
-    // Gửi sự kiện qua WebSocket
-    this.friendsGateway.emitFriendRequestAccepted(requesterId, {
-      friendId: savedFriendRequest.id,
-      userId1: savedFriendRequest.userId1,
-      userId2: savedFriendRequest.userId2,
-      status: savedFriendRequest.status,
-      updatedAt: savedFriendRequest.updatedAt,
-    });
-
-    return savedFriendRequest;
   }
 
   async cancelRequest(
@@ -171,33 +201,44 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
-    const [userId1, userId2] =
-      currentUserId < targetUserId
-        ? [currentUserId, targetUserId]
-        : [targetUserId, currentUserId];
-    const friendRequest = await this.friendRepository.findOne({
-      where: {
-        userId1,
-        userId2,
-        status: FriendStatus.PENDING,
-      },
-    });
-    if (!friendRequest) {
-      throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
-    }
-    friendRequest.status = FriendStatus.CANCELLED;
-    friendRequest.actionUserId = currentUserId;
+    const { userId1, userId2 } = this.normalizeUserIds(
+      currentUserId,
+      targetUserId,
+    );
 
-    const savedFriendRequest = await this.friendRepository.save(friendRequest);
-    // Gửi sự kiện qua WebSocket
-    this.friendsGateway.emitFriendRequestCancelled(targetUserId, {
-      friendId: savedFriendRequest.id,
-      fromUserId: currentUserId,
-      toUserId: targetUserId,
-      status: savedFriendRequest.status,
-      updatedAt: savedFriendRequest.updatedAt,
+    // Fix #7: Transaction
+    return this.friendRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Friend);
+
+      const friendRequest = await repo.findOne({
+        where: { userId1, userId2, status: FriendStatus.PENDING },
+      });
+
+      if (!friendRequest) {
+        throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
+      }
+
+      // Chỉ người đã GỬI mới được cancel
+      if (friendRequest.actionUserId !== currentUserId) {
+        throw new ForbiddenException(
+          'Bạn không thể hủy lời mời mà bạn chưa gửi',
+        );
+      }
+
+      friendRequest.status = FriendStatus.CANCELLED;
+      friendRequest.actionUserId = currentUserId;
+      const saved = await repo.save(friendRequest);
+
+      this.friendsGateway.emitFriendRequestCancelled(targetUserId, {
+        friendId: saved.id,
+        fromUserId: currentUserId,
+        toUserId: targetUserId,
+        status: saved.status,
+        updatedAt: saved.updatedAt,
+      });
+
+      return saved;
     });
-    return savedFriendRequest;
   }
 
   async unfriend(
@@ -205,197 +246,191 @@ export class FriendsService {
     createFriendDto: CreateFriendDto,
   ): Promise<Friend> {
     const { targetUserId } = createFriendDto;
-    const [userId1, userId2] =
-      currentUserId < targetUserId
-        ? [currentUserId, targetUserId]
-        : [targetUserId, currentUserId];
-    const friendship = await this.friendRepository.findOne({
-      where: {
-        userId1,
-        userId2,
-        status: FriendStatus.ACCEPTED,
-      },
-    });
-    if (!friendship) {
-      throw new BadRequestException('Mối quan hệ bạn bè không tồn tại');
-    }
-    friendship.status = FriendStatus.UNFRIENDED;
-    friendship.actionUserId = currentUserId;
-
-    const savedFriendship = await this.friendRepository.save(friendship);
-    // Gửi sự kiện qua WebSocket
-    this.friendsGateway.emitUnfriended(targetUserId, {
-      friendId: savedFriendship.id,
-      fromUserId: currentUserId,
-      toUserId: targetUserId,
-      status: savedFriendship.status,
-      updatedAt: savedFriendship.updatedAt,
-    });
-
-    return savedFriendship;
-  }
-
-  async getFriendsList(
-    currentUserId: number,
-    query: string,
-    current: number,
-    pageSize: number,
-  ) {
-    if (!current) current = 1;
-    if (!pageSize) pageSize = 10;
-
-    const skip = (current - 1) * pageSize;
-
-    const friendships = await this.friendRepository.find({
-      where: [
-        { userId1: currentUserId, status: FriendStatus.ACCEPTED },
-        { userId2: currentUserId, status: FriendStatus.ACCEPTED },
-      ],
-      relations: ['user1', 'user2'],
-    });
-
-    let friends = friendships.map((friendship) => {
-      const otherUser =
-        friendship.userId1 === currentUserId
-          ? friendship.user2
-          : friendship.user1;
-
-      // Chỉ trả ra các thông tin cơ bản, tương tự UsersService.findAll/findOne
-      return {
-        id: otherUser.id,
-        name: otherUser.name,
-        email: otherUser.email,
-        phone: otherUser.phone,
-        address: otherUser.address,
-        image: otherUser.image,
-        isActive: otherUser.isActive,
-        createdAt: otherUser.createdAt,
-        updatedAt: otherUser.updatedAt,
-      };
-    });
-
-    // Filter by query (name or email)
-    if (query) {
-      const searchTerm = query.toLowerCase();
-      friends = friends.filter(
-        (friend) =>
-          friend.name?.toLowerCase().includes(searchTerm) ||
-          friend.email?.toLowerCase().includes(searchTerm),
-      );
-    }
-
-    const totalItems = friends.length;
-    const totalPage = Math.ceil(totalItems / pageSize);
-
-    // Apply pagination
-    const result = friends.slice(skip, skip + pageSize);
-
-    return { result, totalPage };
-  }
-
-  async getFriendPending(currentUserId: number) {
-    const pendingRequests = await this.friendRepository.find({
-      where: [
-        {
-          userId1: currentUserId,
-          status: FriendStatus.PENDING,
-        },
-        {
-          userId2: currentUserId,
-          status: FriendStatus.PENDING,
-        },
-      ],
-      relations: ['user1', 'user2'],
-    });
-
-    // Lọc ra những lời mời mà mình là người nhận (actionUserId != currentUserId)
-    const receivedRequests = pendingRequests.filter(
-      (friendship) => friendship.actionUserId !== currentUserId,
+    const { userId1, userId2 } = this.normalizeUserIds(
+      currentUserId,
+      targetUserId,
     );
 
-    // Map lại để trả về thông tin người gửi lời mời
-    return receivedRequests.map((friendship) => {
-      const sender =
-        friendship.userId1 === currentUserId
-          ? friendship.user2
-          : friendship.user1;
+    // Fix #7: Transaction
+    return this.friendRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Friend);
 
-      return {
-        id: friendship.id,
-        userId1: friendship.userId1,
-        userId2: friendship.userId2,
-        status: friendship.status,
-        actionUserId: friendship.actionUserId,
-        createdAt: friendship.createdAt,
-        updatedAt: friendship.updatedAt,
-        sender: {
-          id: sender.id,
-          name: sender.name,
-          email: sender.email,
-          phone: sender.phone,
-          address: sender.address,
-          image: sender.image,
-          isActive: sender.isActive,
-          createdAt: sender.createdAt,
-          updatedAt: sender.updatedAt,
-        },
-      };
+      const friendship = await repo.findOne({
+        where: { userId1, userId2, status: FriendStatus.ACCEPTED },
+      });
+
+      if (!friendship) {
+        throw new BadRequestException('Mối quan hệ bạn bè không tồn tại');
+      }
+
+      friendship.status = FriendStatus.UNFRIENDED;
+      friendship.actionUserId = currentUserId;
+      const saved = await repo.save(friendship);
+
+      this.friendsGateway.emitUnfriended(targetUserId, {
+        friendId: saved.id,
+        fromUserId: currentUserId,
+        toUserId: targetUserId,
+        status: saved.status,
+        updatedAt: saved.updatedAt,
+      });
+
+      return saved;
     });
   }
 
-  async getUserFriends(
-    userId: number,
-    query: string,
-    current: number,
-    pageSize: number,
-  ) {
-    if (!current) current = 1;
-    if (!pageSize) pageSize = 10;
+  // ─── Queries ──────────────────────────────────────────────────────────────
 
-    const skip = (current - 1) * pageSize;
+  // Fix #4: Pagination và filter thực hiện tại DB, không load hết rồi slice ở JS
+  async getFriendsList(
+    currentUserId: number,
+    queryDto: QueryFriendDto,
+  ): Promise<PaginatedFriends> {
+    const { query, current = 1, pageSize = 10 } = queryDto;
 
-    const friendships = await this.friendRepository.find({
-      where: [
-        { userId1: userId, status: FriendStatus.ACCEPTED },
-        { userId2: userId, status: FriendStatus.ACCEPTED },
-      ],
-      relations: ['user1', 'user2'],
-    });
+    const qb = this.friendRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.user1', 'u1')
+      .leftJoinAndSelect('f.user2', 'u2')
+      .where('(f.userId1 = :id OR f.userId2 = :id) AND f.status = :status', {
+        id: currentUserId,
+        status: FriendStatus.ACCEPTED,
+      });
 
-    let friends = friendships.map((friendship) => {
-      const otherUser =
-        friendship.userId1 === userId ? friendship.user2 : friendship.user1;
-
-      // Chỉ trả ra các thông tin cơ bản, tương tự UsersService.findAll/findOne
-      return {
-        id: otherUser.id,
-        name: otherUser.name,
-        email: otherUser.email,
-        phone: otherUser.phone,
-        address: otherUser.address,
-        image: otherUser.image,
-        isActive: otherUser.isActive,
-        createdAt: otherUser.createdAt,
-        updatedAt: otherUser.updatedAt,
-      };
-    });
-
-    // Filter by query (name or email)
     if (query) {
-      const searchTerm = query.toLowerCase();
-      friends = friends.filter(
-        (friend) =>
-          friend.name?.toLowerCase().includes(searchTerm) ||
-          friend.email?.toLowerCase().includes(searchTerm),
+      // ILIKE cho PostgreSQL (case-insensitive). Dùng LIKE nếu là MySQL
+      qb.andWhere(
+        `(
+          u1.name ILIKE :q OR u1.email ILIKE :q OR
+          u2.name ILIKE :q OR u2.email ILIKE :q
+        )`,
+        { q: `%${query}%` },
       );
     }
 
-    const totalItems = friends.length;
-    const totalPage = Math.ceil(totalItems / pageSize);
+    const [friendships, total] = await qb
+      .orderBy('f.updatedAt', 'DESC')
+      .skip((current - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
 
-    // Apply pagination
-    const result = friends.slice(skip, skip + pageSize);
+    const result = friendships.map((f) => {
+      const other = f.userId1 === currentUserId ? f.user2 : f.user1;
+      return this.mapUserInfo(other);
+    });
 
-    return { result, totalPage };
+    return {
+      result,
+      total,
+      totalPage: Math.ceil(total / pageSize),
+      current,
+      pageSize,
+    };
+  }
+
+  // Fix #8: Thêm pagination cho getFriendPending
+  async getFriendPending(
+    currentUserId: number,
+    queryDto: QueryFriendDto,
+  ): Promise<{
+    result: PendingRequestItem[];
+    total: number;
+    totalPage: number;
+  }> {
+    const { current = 1, pageSize = 10 } = queryDto;
+
+    // Lọc ngay tại DB: lời mời mà mình là người NHẬN (actionUserId != currentUserId)
+    const [requests, total] = await this.friendRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.user1', 'u1')
+      .leftJoinAndSelect('f.user2', 'u2')
+      .where(
+        `(f.userId1 = :id OR f.userId2 = :id)
+          AND f.status = :status
+          AND f.actionUserId != :id`,
+        { id: currentUserId, status: FriendStatus.PENDING },
+      )
+      .orderBy('f.createdAt', 'DESC')
+      .skip((current - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    const result: PendingRequestItem[] = requests.map((f) => {
+      const sender = f.userId1 === currentUserId ? f.user2 : f.user1;
+      return {
+        id: f.id,
+        userId1: f.userId1,
+        userId2: f.userId2,
+        status: f.status,
+        actionUserId: f.actionUserId,
+        createdAt: f.createdAt,
+        updatedAt: f.updatedAt,
+        sender: this.mapUserInfo(sender),
+      };
+    });
+
+    return { result, total, totalPage: Math.ceil(total / pageSize) };
+  }
+
+  // Fix #4: DB-level pagination và filter, giống getFriendsList
+  async getUserFriends(
+    userId: number,
+    queryDto: QueryFriendDto,
+  ): Promise<PaginatedFriends> {
+    const { query, current = 1, pageSize = 10 } = queryDto;
+
+    const qb = this.friendRepository
+      .createQueryBuilder('f')
+      .leftJoinAndSelect('f.user1', 'u1')
+      .leftJoinAndSelect('f.user2', 'u2')
+      .where('(f.userId1 = :id OR f.userId2 = :id) AND f.status = :status', {
+        id: userId,
+        status: FriendStatus.ACCEPTED,
+      });
+
+    if (query) {
+      qb.andWhere(
+        `(
+          u1.name ILIKE :q OR u1.email ILIKE :q OR
+          u2.name ILIKE :q OR u2.email ILIKE :q
+        )`,
+        { q: `%${query}%` },
+      );
+    }
+
+    const [friendships, total] = await qb
+      .orderBy('f.updatedAt', 'DESC')
+      .skip((current - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    const result = friendships.map((f) => {
+      const other = f.userId1 === userId ? f.user2 : f.user1;
+      return this.mapUserInfo(other);
+    });
+
+    return {
+      result,
+      total,
+      totalPage: Math.ceil(total / pageSize),
+      current,
+      pageSize,
+    };
+  }
+
+  // ─── Private Helpers ──────────────────────────────────────────────────────
+
+  private mapUserInfo(user: any) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      address: user.address,
+      image: user.image,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 }
