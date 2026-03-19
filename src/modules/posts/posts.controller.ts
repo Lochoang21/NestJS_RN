@@ -1,11 +1,23 @@
 /* eslint-disable prettier/prettier */
-import { Controller, Get, Post, Body, Patch, Param, Delete, Request, UseGuards, Query, ParseIntPipe } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Delete,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { PostsService } from './posts.service';
-import { CreatePostDto } from './dto/create-post.dto';
+import { CreatePostCommentDto, CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { JwtAuthGuard } from 'src/auth/passport/jwt-auth.guard';
 import { ResponseMessage } from 'src/decorator/customize';
-
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postsService: PostsService) { }
@@ -21,12 +33,12 @@ export class PostsController {
   @ResponseMessage('Lấy danh sách bài viết thành công')
   findAll(
     @Query('query') query: string,
-    @Query('current') current: string,
-    @Query('pageSize') pageSize: string,
+    @Query('current', new DefaultValuePipe(1), ParseIntPipe) current: number,
+    @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize: number,
     @Request() req,
   ) {
     const userId = req.user?.id; // Get user ID if authenticated
-    return this.postsService.findAll(query, +current, +pageSize, userId);
+    return this.postsService.findAll(query, current, pageSize, userId);
   }
 
   @Get('author/:userId')
@@ -34,12 +46,12 @@ export class PostsController {
   findByAuthor(
     @Param('userId', ParseIntPipe) userId: number,
     @Query('query') query: string,
-    @Query('current') current: string,
-    @Query('pageSize') pageSize: string,
+    @Query('current', new DefaultValuePipe(1), ParseIntPipe) current: number,
+    @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize: number,
     @Request() req,
   ) {
     const currentUserId = req.user?.id; // Get user ID if authenticated
-    return this.postsService.findByAuthor(userId, query, +current, +pageSize, currentUserId);
+    return this.postsService.findByAuthor(userId, query, current, pageSize, currentUserId);
   }
 
   @Get('me')
@@ -48,13 +60,13 @@ export class PostsController {
   findMyPosts(
     @Request() req,
     @Query('query') query: string,
-    @Query('current') current: string,
-    @Query('pageSize') pageSize: string,
+    @Query('current', new DefaultValuePipe(1), ParseIntPipe) current: number,
+    @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe) pageSize: number,
   ) {
-    return this.postsService.findByAuthor(req.user.id, query, +current, +pageSize, req.user.id);
+    return this.postsService.findByAuthor(req.user.id, query, current, pageSize, req.user.id);
   }
 
-  @Get('/author/:userId/images')
+  @Get('author/:userId/images')
   @ResponseMessage('Lấy ảnh bài viết của tác giả thành công')
   findImagesByAuthor(@Param('userId', ParseIntPipe) userId: number) {
     return this.postsService.findImagesByAuthor(userId);
@@ -68,15 +80,21 @@ export class PostsController {
   }
 
   @Patch(':id')
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Cập nhật bài viết thành công')
-  update(@Param('id', ParseIntPipe) id: number, @Body() updatePostDto: UpdatePostDto) {
-    return this.postsService.update(id, updatePostDto);
+  update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updatePostDto: UpdatePostDto,
+    @Request() req,
+  ) {
+    return this.postsService.update(id, updatePostDto, req.user.id);
   }
 
   @Delete(':id')
+  @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xoá bài viết thành công')
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.postsService.remove(id);
+  remove(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    return this.postsService.remove(id, req.user.id);
   }
 
   @Post(':id/like')
@@ -98,14 +116,18 @@ export class PostsController {
   @ResponseMessage('Bình luận bài viết thành công')
   commentOnPost(
     @Param('id', ParseIntPipe) id: number,
-    @Body('content') content: string,
-    @Body('parentCommentId') parentCommentId: number,
+    @Body() createPostCommentDto: CreatePostCommentDto,
     @Request() req,
   ) {
-    return this.postsService.commentOnPost(id, req.user.id, content, parentCommentId);
+    return this.postsService.commentOnPost(
+      id,
+      req.user.id,
+      createPostCommentDto.content,
+      createPostCommentDto.parentCommentId,
+    );
   }
 
-  @Post('comments/:commentId')
+  @Delete('comments/:commentId')
   @UseGuards(JwtAuthGuard)
   @ResponseMessage('Xoá bình luận thành công')
   deleteComment(

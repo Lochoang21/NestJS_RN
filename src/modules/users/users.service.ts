@@ -72,7 +72,7 @@ export class UsersService {
       where,
       take: pageSize,
       skip: skip,
-      select: ['id', 'name', 'email', 'phone', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
+      select: ['id', 'name', 'email', 'phone', 'bio', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
       order: { createdAt: 'DESC' },
     });
 
@@ -84,7 +84,7 @@ export class UsersService {
   async findOne(id: number): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
-      select: ['id', 'name', 'email', 'phone', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
+      select: ['id', 'name', 'email', 'phone', 'bio', 'address', 'image', 'isActive', 'createdAt', 'updatedAt'],
     });
 
     if (!user) {

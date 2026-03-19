@@ -13,6 +13,14 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
 import { TransformInterceptor } from './core/transform.interceptor';
 import { FriendsModule } from './modules/friends/friends.module';
 
+const toBoolean = (value: string | undefined, defaultValue: boolean) => {
+  if (value === undefined) {
+    return defaultValue;
+  }
+
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+};
+
 @Module({
   imports: [
     UsersModule,
@@ -23,19 +31,32 @@ import { FriendsModule } from './modules/friends/friends.module';
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        type: 'mysql',
-        host: configService.get<string>('DB_HOST'),
-        port: parseInt(configService.get<string>('DB_PORT') ?? '3306', 10),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: false, // Tắt để tránh xung đột schema
-        autoLoadEntities: true,
-        retryAttempts: 10,
-        retryDelay: 3000,
-      }),
+      useFactory: async (configService: ConfigService) => {
+        const nodeEnv = (
+          configService.get<string>('NODE_ENV') ?? 'development'
+        ).toLowerCase();
+        const isProduction = nodeEnv === 'production';
+
+        // Default: auto-sync in non-production so tables can be recreated from entities.
+        const synchronize = toBoolean(
+          configService.get<string>('DB_SYNC'),
+          !isProduction,
+        );
+
+        return {
+          type: 'mysql',
+          host: configService.get<string>('DB_HOST'),
+          port: parseInt(configService.get<string>('DB_PORT') ?? '3306', 10),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_NAME'),
+          entities: [__dirname + '/**/*.entity{.ts,.js}'],
+          synchronize,
+          autoLoadEntities: true,
+          retryAttempts: 10,
+          retryDelay: 3000,
+        };
+      },
       inject: [ConfigService],
     }),
 

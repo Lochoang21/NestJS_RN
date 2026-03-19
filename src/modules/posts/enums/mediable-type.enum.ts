@@ -2,5 +2,4 @@
 export enum MediableType {
   POST = 'Post',
   MESSAGE = 'Message',
-  GROUP_POST = 'GroupPost',
 }

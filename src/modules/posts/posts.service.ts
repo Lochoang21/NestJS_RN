@@ -1,10 +1,15 @@
 /* eslint-disable prettier/prettier */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreatePostDto } from './dto/create-post.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like as ILike } from 'typeorm';
+import { Repository, Like as ILike, In } from 'typeorm';
 import { Post } from './entities/post.entity';
 import { Like } from './entities/like.entity';
 import { Comment } from './entities/comment.entity';
@@ -12,9 +17,14 @@ import { Media } from './entities/media.entity';
 import { MediableType } from './enums/mediable-type.enum';
 import { LikeableType } from './enums/likeable-type.enum';
 import { FileType } from './enums/file-type.enum';
+import { PostPrivacy } from './enums/post-privacy.enum';
 
 @Injectable()
 export class PostsService {
+  private readonly DEFAULT_PAGE = 1;
+  private readonly DEFAULT_PAGE_SIZE = 10;
+  private readonly MAX_PAGE_SIZE = 100;
+
   constructor(
     @InjectRepository(Post)
     private readonly postRepository: Repository<Post>,
@@ -29,7 +39,7 @@ export class PostsService {
   async create(createPostDto: CreatePostDto, userId: number) {
     const post = this.postRepository.create({
       content: createPostDto.content,
-      privacy: createPostDto.privacy as any,
+      privacy: createPostDto.privacy ?? PostPrivacy.PUBLIC,
       userId,
     });
 
@@ -66,10 +76,10 @@ export class PostsService {
   }
 
   async findAll(query: string, current: number, pageSize: number, currentUserId?: number) {
-    if (!current) current = 1;
-    if (!pageSize) pageSize = 10;
-
-    const skip = (current - 1) * pageSize;
+    const { pageSize: size, skip } = this.normalizePagination(
+      current,
+      pageSize,
+    );
 
     // Parse query parameters for filtering
     const where: any = { isDeleted: 0 };
@@ -79,7 +89,7 @@ export class PostsService {
 
     const [posts, totalItems] = await this.postRepository.findAndCount({
       where,
-      take: pageSize,
+      take: size,
       skip: skip,
       relations: ['user'],
       select: {
@@ -99,87 +109,15 @@ export class PostsService {
       order: { createdAt: 'DESC' },
     });
 
-    // Load media, likes count, comments, and isLiked for each post
-    const result = await Promise.all(
-      posts.map(async (post) => {
-        const media = await this.mediaRepository.find({
-          where: {
-            mediableId: post.id,
-            mediableType: MediableType.POST,
-            isDeleted: 0,
-          },
-          select: ['id', 'filePath', 'fileType', 'fileName'],
-        });
+    const result = await this.enrichPosts(posts, currentUserId);
 
-        // Count total likes
-        const likesCount = await this.likeRepository.count({
-          where: {
-            likeableId: post.id,
-            likeableType: LikeableType.POST,
-          },
-        });
-
-        // Check if current user liked this post
-        let isLiked = false;
-        if (currentUserId) {
-          const userLike = await this.likeRepository.findOne({
-            where: {
-              likeableId: post.id,
-              likeableType: LikeableType.POST,
-              userId: currentUserId,
-            },
-          });
-          isLiked = !!userLike;
-        }
-
-        // Get comments with user info
-        const comments = await this.commentRepository.find({
-          where: {
-            postId: post.id,
-            isDeleted: 0,
-          },
-          relations: ['user'],
-          select: {
-            id: true,
-            postId: true,
-            userId: true,
-            parentCommentId: true,
-            content: true,
-            createdAt: true,
-            updatedAt: true,
-            user: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-          order: { createdAt: 'ASC' },
-        });
-
-        const commentsCount = comments.length;
-
-        return {
-          ...post,
-          mediaUrls: media.map((m) => m.filePath),
-          likesCount,
-          isLiked,
-          comments,
-          commentsCount,
-        };
-      }),
-    );
-
-    const totalPage = Math.ceil(totalItems / pageSize);
+    const totalPage = Math.ceil(totalItems / size);
 
     return { result, totalPage };
   }
 
   async findByAuthor(userId: number, query: string, current: number, pageSize: number, currentUserId?: number) {
-    if (!current) current = 1;
-    if (!pageSize) pageSize = 10;
-
-    const skip = (current - 1) * pageSize;
+    const { pageSize: size, skip } = this.normalizePagination(current, pageSize);
 
     // Build where condition
     const where: any = { userId, isDeleted: 0 };
@@ -189,7 +127,7 @@ export class PostsService {
 
     const [posts, totalItems] = await this.postRepository.findAndCount({
       where,
-      take: pageSize,
+      take: size,
       skip: skip,
       relations: ['user'],
       select: {
@@ -209,78 +147,9 @@ export class PostsService {
       order: { createdAt: 'DESC' },
     });
 
-    // Load media, likes count, comments, and isLiked for each post
-    const result = await Promise.all(
-      posts.map(async (post) => {
-        const media = await this.mediaRepository.find({
-          where: {
-            mediableId: post.id,
-            mediableType: MediableType.POST,
-            isDeleted: 0,
-          },
-          select: ['id', 'filePath', 'fileType', 'fileName'],
-        });
+    const result = await this.enrichPosts(posts, currentUserId);
 
-        // Count total likes
-        const likesCount = await this.likeRepository.count({
-          where: {
-            likeableId: post.id,
-            likeableType: LikeableType.POST,
-          },
-        });
-
-        // Check if current user liked this post
-        let isLiked = false;
-        if (currentUserId) {
-          const userLike = await this.likeRepository.findOne({
-            where: {
-              likeableId: post.id,
-              likeableType: LikeableType.POST,
-              userId: currentUserId,
-            },
-          });
-          isLiked = !!userLike;
-        }
-
-        // Get comments with user info
-        const comments = await this.commentRepository.find({
-          where: {
-            postId: post.id,
-            isDeleted: 0,
-          },
-          relations: ['user'],
-          select: {
-            id: true,
-            postId: true,
-            userId: true,
-            parentCommentId: true,
-            content: true,
-            createdAt: true,
-            updatedAt: true,
-            user: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-            },
-          },
-          order: { createdAt: 'ASC' },
-        });
-
-        const commentsCount = comments.length;
-
-        return {
-          ...post,
-          mediaUrls: media.map((m) => m.filePath),
-          likesCount,
-          isLiked,
-          comments,
-          commentsCount,
-        };
-      }),
-    );
-
-    const totalPage = Math.ceil(totalItems / pageSize);
+    const totalPage = Math.ceil(totalItems / size);
 
     return { result, totalPage };
   }
@@ -332,89 +201,36 @@ export class PostsService {
     });
 
     if (!post) {
-      return null;
+      throw new NotFoundException('Bài viết không tồn tại');
     }
 
-    // Load media
-    const media = await this.mediaRepository.find({
-      where: {
-        mediableId: post.id,
-        mediableType: MediableType.POST,
-        isDeleted: 0,
-      },
-      select: ['id', 'filePath', 'fileType', 'fileName'],
-    });
-
-    // Count total likes
-    const likesCount = await this.likeRepository.count({
-      where: {
-        likeableId: post.id,
-        likeableType: LikeableType.POST,
-      },
-    });
-
-    // Check if current user liked this post
-    let isLiked = false;
-    if (currentUserId) {
-      const userLike = await this.likeRepository.findOne({
-        where: {
-          likeableId: post.id,
-          likeableType: LikeableType.POST,
-          userId: currentUserId,
-        },
-      });
-      isLiked = !!userLike;
-    }
-
-    // Get comments with user info
-    const comments = await this.commentRepository.find({
-      where: {
-        postId: post.id,
-        isDeleted: 0,
-      },
-      relations: ['user'],
-      select: {
-        id: true,
-        postId: true,
-        userId: true,
-        parentCommentId: true,
-        content: true,
-        createdAt: true,
-        updatedAt: true,
-        user: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-        },
-      },
-      order: { createdAt: 'ASC' },
-    });
-
-    const commentsCount = comments.length;
-
-    return {
-      ...post,
-      mediaUrls: media.map((m) => m.filePath),
-      likesCount,
-      isLiked,
-      comments,
-      commentsCount,
-    };
+    const [result] = await this.enrichPosts([post], currentUserId);
+    return result;
   }
 
-  async update(id: number, updatePostDto: UpdatePostDto) {
+  async update(id: number, updatePostDto: UpdatePostDto, currentUserId: number) {
     const post = await this.postRepository.findOne({ where: { id, isDeleted: 0 } });
     if (!post) {
-      throw new Error('Bài viết không tồn tại');
+      throw new NotFoundException('Bài viết không tồn tại');
+    }
+
+    if (post.userId !== currentUserId) {
+      throw new ForbiddenException('Bạn không có quyền chỉnh sửa bài viết này');
     }
 
     // Update post content and privacy
-    const updateData: any = {
-      content: updatePostDto.content,
-      privacy: updatePostDto.privacy,
-    };
-    await this.postRepository.update(id, updateData);
+    const updateData: Partial<Post> = {};
+    if (typeof updatePostDto.content === 'string') {
+      updateData.content = updatePostDto.content;
+    }
+
+    if (updatePostDto.privacy) {
+      updateData.privacy = updatePostDto.privacy;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await this.postRepository.update(id, updateData);
+    }
 
     // Update media if provided
     if (updatePostDto.mediaUrls) {
@@ -447,11 +263,16 @@ export class PostsService {
     return { affected: 1 };
   }
 
-  async remove(id: number) {
+  async remove(id: number, currentUserId: number) {
     const post = await this.postRepository.findOne({ where: { id, isDeleted: 0 } });
     if (!post) {
-      throw new Error('Bài viết không tồn tại');
+      throw new NotFoundException('Bài viết không tồn tại');
     }
+
+    if (post.userId !== currentUserId) {
+      throw new ForbiddenException('Bạn không có quyền xoá bài viết này');
+    }
+
     return await this.postRepository.update(id, {
       isDeleted: 1,
       deletedAt: new Date(),
@@ -478,9 +299,7 @@ export class PostsService {
     });
 
     if (existingLike) {
-      // If already liked, unlike it (toggle behavior)
-      await this.likeRepository.remove(existingLike);
-      return { message: 'Đã bỏ thích bài viết', liked: false };
+      return { message: 'Bạn đã thích bài viết này trước đó', liked: true };
     }
 
     // Create new like
@@ -514,7 +333,7 @@ export class PostsService {
     });
 
     if (!existingLike) {
-      throw new BadRequestException('Bạn chưa thích bài viết này');
+      return { message: 'Bài viết chưa được thích trước đó', liked: false };
     }
     // Remove like
     await this.likeRepository.delete({
@@ -565,12 +384,141 @@ export class PostsService {
       where: { id: commentId, isDeleted: 0 },
     });
     if (!comment) {
-      throw new BadRequestException('Bình luận không tồn tại');
+      throw new NotFoundException('Bình luận không tồn tại');
     }
+
+    if (comment.userId !== userId) {
+      const post = await this.postRepository.findOne({
+        where: { id: comment.postId, isDeleted: 0 },
+        select: ['id', 'userId'],
+      });
+
+      if (!post || post.userId !== userId) {
+        throw new ForbiddenException('Bạn không có quyền xoá bình luận này');
+      }
+    }
+
     await this.commentRepository.update(commentId, {
       isDeleted: 1,
       deletedAt: new Date(),
     });
-    return { message: 'Chức năng xoá bình luận chưa được triển khai' };
+
+    return { message: 'Đã xoá bình luận' };
+  }
+
+  private normalizePagination(current: number, pageSize: number) {
+    const normalizedCurrent = Number.isFinite(current) && current > 0
+      ? Math.floor(current)
+      : this.DEFAULT_PAGE;
+
+    const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0
+      ? Math.min(Math.floor(pageSize), this.MAX_PAGE_SIZE)
+      : this.DEFAULT_PAGE_SIZE;
+
+    return {
+      current: normalizedCurrent,
+      pageSize: normalizedPageSize,
+      skip: (normalizedCurrent - 1) * normalizedPageSize,
+    };
+  }
+
+  private async enrichPosts(posts: any[], currentUserId?: number) {
+    if (posts.length === 0) {
+      return [];
+    }
+
+    const postIds = posts.map((post) => Number(post.id));
+
+    const [mediaList, likeStatRows, comments, currentUserLikes] = await Promise.all([
+      this.mediaRepository.find({
+        where: {
+          mediableId: In(postIds),
+          mediableType: MediableType.POST,
+          isDeleted: 0,
+        },
+        select: ['id', 'mediableId', 'filePath', 'fileType', 'fileName'],
+      }),
+      this.likeRepository
+        .createQueryBuilder('like')
+        .select('like.likeable_id', 'postId')
+        .addSelect('COUNT(*)', 'likesCount')
+        .where('like.likeable_type = :type', { type: LikeableType.POST })
+        .andWhere('like.likeable_id IN (:...postIds)', { postIds })
+        .groupBy('like.likeable_id')
+        .getRawMany(),
+      this.commentRepository.find({
+        where: {
+          postId: In(postIds),
+          isDeleted: 0,
+        },
+        relations: ['user'],
+        select: {
+          id: true,
+          postId: true,
+          userId: true,
+          parentCommentId: true,
+          content: true,
+          createdAt: true,
+          updatedAt: true,
+          user: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+          },
+        },
+        order: { createdAt: 'ASC' },
+      }),
+      currentUserId
+        ? this.likeRepository.find({
+          where: {
+            userId: currentUserId,
+            likeableType: LikeableType.POST,
+            likeableId: In(postIds),
+          },
+          select: ['likeableId'],
+        })
+        : Promise.resolve([]),
+    ]);
+
+    const mediaMap = new Map<number, Media[]>();
+    for (const media of mediaList) {
+      const key = Number(media.mediableId);
+      if (!mediaMap.has(key)) {
+        mediaMap.set(key, []);
+      }
+      mediaMap.get(key)?.push(media);
+    }
+
+    const likesMap = new Map<number, number>();
+    for (const row of likeStatRows) {
+      likesMap.set(Number(row.postId), Number(row.likesCount));
+    }
+
+    const commentsMap = new Map<number, Comment[]>();
+    for (const comment of comments) {
+      const key = Number(comment.postId);
+      if (!commentsMap.has(key)) {
+        commentsMap.set(key, []);
+      }
+      commentsMap.get(key)?.push(comment);
+    }
+
+    const likedSet = new Set<number>(
+      currentUserLikes.map((like) => Number(like.likeableId)),
+    );
+
+    return posts.map((post) => {
+      const postId = Number(post.id);
+      const postComments = commentsMap.get(postId) ?? [];
+      return {
+        ...post,
+        mediaUrls: (mediaMap.get(postId) ?? []).map((m) => m.filePath),
+        likesCount: likesMap.get(postId) ?? 0,
+        isLiked: likedSet.has(postId),
+        comments: postComments,
+        commentsCount: postComments.length,
+      };
+    });
   }
 }

@@ -4,7 +4,6 @@ export enum NotificationType {
   COMMENT = 'comment',
   FRIEND_REQUEST = 'friend_request',
   FRIEND_ACCEPT = 'friend_accept',
-  GROUP_INVITE = 'group_invite',
   MENTION = 'mention',
   VIDEO_CALL = 'video_call',
 }
@@ -13,9 +12,6 @@ export enum NotificationType {
 export enum ReferenceType {
   POST = 'Post',
   COMMENT = 'Comment',
-  GROUP = 'Group',
-  GROUP_POST = 'GroupPost',
-  GROUP_COMMENT = 'GroupComment',
   USER = 'User',
   VIDEO_CALL = 'VideoCall',
 }

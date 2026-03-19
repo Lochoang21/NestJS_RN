@@ -10,7 +10,6 @@ import { User } from '../../users/entities/user.entity';
 
 export enum VideoCallType {
   ONE_TO_ONE = 'one_to_one',
-  GROUP = 'group',
 }
 
 export enum VideoCallStatus {
