@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { hashPasswordHelper } from '@/helpers/util';
 // Generate 6-digit numeric codes for email verification/reset
@@ -14,14 +14,122 @@ import {
 } from '@/auth/dto/create-auth.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { Friend } from '../friends/entities/friend.entity';
+import { FriendStatus } from '../friends/enums/friend-status.enum';
+import { SearchFriendUserDto } from './dto/search-friend-user.dto';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Friend)
+    private friendRepository: Repository<Friend>,
     private readonly mailerService: MailerService,
   ) { }
+
+  async searchUsersForFriendInvite(
+    currentUserId: number,
+    queryDto: SearchFriendUserDto,
+  ) {
+    const { query, current = 1, pageSize = 10 } = queryDto;
+    const normalizedQuery = query?.trim().toLowerCase();
+
+    const qb = this.userRepository
+      .createQueryBuilder('u')
+      .select([
+        'u.id',
+        'u.name',
+        'u.email',
+        'u.phone',
+        'u.bio',
+        'u.address',
+        'u.image',
+        'u.isActive',
+        'u.createdAt',
+        'u.updatedAt',
+      ])
+      .where('u.id != :currentUserId', { currentUserId });
+
+    if (normalizedQuery) {
+      qb.andWhere('(LOWER(u.name) LIKE :q OR LOWER(u.email) LIKE :q)', {
+        q: `%${normalizedQuery}%`,
+      });
+    }
+
+    const [users, total] = await qb
+      .orderBy('u.createdAt', 'DESC')
+      .skip((current - 1) * pageSize)
+      .take(pageSize)
+      .getManyAndCount();
+
+    if (!users.length) {
+      return {
+        result: [],
+        total: 0,
+        totalPage: 0,
+        current,
+        pageSize,
+      };
+    }
+
+    const targetIds = users.map((user) => user.id);
+
+    const relations = await this.friendRepository.find({
+      where: [
+        {
+          userId1: currentUserId,
+          userId2: In(targetIds),
+        },
+        {
+          userId1: In(targetIds),
+          userId2: currentUserId,
+        },
+      ],
+      select: ['id', 'userId1', 'userId2', 'status', 'actionUserId', 'updatedAt'],
+    });
+
+    const relationByOtherId = new Map<number, Friend>();
+    for (const relation of relations) {
+      const otherId = relation.userId1 === currentUserId ? relation.userId2 : relation.userId1;
+      relationByOtherId.set(otherId, relation);
+    }
+
+    const result = users.map((user) => {
+      const relation = relationByOtherId.get(user.id);
+      const canSendRequest =
+        !relation ||
+        relation.status === FriendStatus.CANCELLED ||
+        relation.status === FriendStatus.UNFRIENDED;
+
+      return {
+        ...user,
+        friendship: relation
+          ? {
+            id: relation.id,
+            status: relation.status,
+            actionUserId: relation.actionUserId,
+            updatedAt: relation.updatedAt,
+            canSendRequest,
+          }
+          : {
+            id: null,
+            status: null,
+            actionUserId: null,
+            updatedAt: null,
+            canSendRequest: true,
+          },
+      };
+    });
+
+    return {
+      result,
+      total,
+      totalPage: Math.ceil(total / pageSize),
+      current,
+      pageSize,
+    };
+  }
 
   isEmailExist = async (email: string) => {
     const user = await this.userRepository.findOne({ where: { email } });

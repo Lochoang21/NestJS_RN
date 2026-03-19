@@ -298,13 +298,12 @@ export class FriendsService {
       });
 
     if (query) {
-      // ILIKE cho PostgreSQL (case-insensitive). Dùng LIKE nếu là MySQL
       qb.andWhere(
         `(
-          u1.name ILIKE :q OR u1.email ILIKE :q OR
-          u2.name ILIKE :q OR u2.email ILIKE :q
+          LOWER(u1.name) LIKE :q OR LOWER(u1.email) LIKE :q OR
+          LOWER(u2.name) LIKE :q OR LOWER(u2.email) LIKE :q
         )`,
-        { q: `%${query}%` },
+        { q: `%${query.toLowerCase()}%` },
       );
     }
 
@@ -391,10 +390,10 @@ export class FriendsService {
     if (query) {
       qb.andWhere(
         `(
-          u1.name ILIKE :q OR u1.email ILIKE :q OR
-          u2.name ILIKE :q OR u2.email ILIKE :q
+          LOWER(u1.name) LIKE :q OR LOWER(u1.email) LIKE :q OR
+          LOWER(u2.name) LIKE :q OR LOWER(u2.email) LIKE :q
         )`,
-        { q: `%${query}%` },
+        { q: `%${query.toLowerCase()}%` },
       );
     }
 
