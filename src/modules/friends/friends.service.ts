@@ -34,6 +34,9 @@ export class FriendsService {
   /**
    * Normalize thứ tự userId để đảm bảo constraint unique trong DB.
    * Luôn giữ userId nhỏ hơn ở vị trí userId1.
+   *
+   * Điều này giúp mọi truy vấn quan hệ bạn bè giữa 2 user luôn ổn định,
+   * tránh tạo trùng record chỉ vì thứ tự truyền vào khác nhau.
    */
   private normalizeUserIds(
     a: number,
@@ -43,7 +46,10 @@ export class FriendsService {
   }
 
   /**
-   * Lấy friendId của người còn lại trong cặp quan hệ.
+   * Lấy userId của người còn lại trong cặp quan hệ bạn bè.
+   *
+   * Dùng khi đã có record Friend nhưng cần xác định "đối phương"
+   * để gửi thông báo WebSocket.
    */
   private getOtherId(record: Friend, currentUserId: number): number {
     return record.userId1 === currentUserId ? record.userId2 : record.userId1;
@@ -51,6 +57,22 @@ export class FriendsService {
 
   // ─── Mutations ────────────────────────────────────────────────────────────
 
+  /**
+   * Tạo lời mời kết bạn mới từ currentUserId đến targetUserId.
+   *
+   * Luồng xử lý chính:
+   * - Chặn tự kết bạn với chính mình.
+   * - Kiểm tra user đích có tồn tại.
+   * - Chuẩn hóa cặp userId để truy vấn đúng record duy nhất.
+   * - Nếu đã có record:
+   *   + ACCEPTED: báo đã là bạn.
+   *   + PENDING và do đối phương gửi: auto-accept.
+   *   + PENDING và do chính mình gửi: báo đang chờ.
+   *   + UNFRIENDED/CANCELLED: tái sử dụng record và chuyển về PENDING.
+   * - Nếu chưa có record: tạo mới trạng thái PENDING.
+   *
+   * Tất cả chạy trong transaction để cập nhật DB và phát event theo cùng 1 luồng nghiệp vụ.
+   */
   async createRequest(
     currentUserId: number,
     createFriendDto: CreateFriendDto,
@@ -149,6 +171,15 @@ export class FriendsService {
     });
   }
 
+  /**
+   * Chấp nhận lời mời kết bạn đang ở trạng thái PENDING.
+   *
+   * Quy tắc:
+   * - Chỉ người nhận lời mời mới được accept.
+   * - Người gửi không được tự accept lời mời của mình.
+   *
+   * Sau khi cập nhật thành ACCEPTED, hệ thống emit event cho người gửi.
+   */
   async acceptRequest(
     currentUserId: number,
     createFriendDto: CreateFriendDto,
@@ -196,6 +227,15 @@ export class FriendsService {
     });
   }
 
+  /**
+   * Hủy lời mời kết bạn đang chờ xử lý.
+   *
+   * Quy tắc:
+   * - Chỉ người đã gửi lời mời (actionUserId) mới được hủy.
+   * - Chỉ thao tác trên lời mời ở trạng thái PENDING.
+   *
+   * Khi hủy thành công, trạng thái chuyển sang CANCELLED và emit event cho người nhận.
+   */
   async cancelRequest(
     currentUserId: number,
     createFriendDto: CreateFriendDto,
@@ -241,6 +281,12 @@ export class FriendsService {
     });
   }
 
+  /**
+   * Hủy quan hệ bạn bè đã được chấp nhận trước đó.
+   *
+   * Chỉ xử lý khi record đang ở trạng thái ACCEPTED.
+   * Sau khi unfriend, trạng thái chuyển thành UNFRIENDED và phát sự kiện cho đối phương.
+   */
   async unfriend(
     currentUserId: number,
     createFriendDto: CreateFriendDto,
@@ -282,6 +328,13 @@ export class FriendsService {
   // ─── Queries ──────────────────────────────────────────────────────────────
 
   // Fix #4: Pagination và filter thực hiện tại DB, không load hết rồi slice ở JS
+  /**
+   * Lấy danh sách bạn bè của người dùng hiện tại có phân trang.
+   *
+   * Hỗ trợ tìm kiếm theo tên/email của cả hai phía trong cặp user1-user2.
+   * Kết quả trả về chỉ chứa thông tin "người còn lại" trong mối quan hệ,
+   * không trả về chính currentUser.
+   */
   async getFriendsList(
     currentUserId: number,
     queryDto: QueryFriendDto,
@@ -328,6 +381,14 @@ export class FriendsService {
   }
 
   // Fix #8: Thêm pagination cho getFriendPending
+  /**
+   * Lấy danh sách lời mời kết bạn đang chờ mà currentUser là người nhận.
+   *
+   * Điều kiện lọc:
+   * - Thuộc cặp quan hệ có chứa currentUser.
+   * - Trạng thái PENDING.
+   * - actionUserId khác currentUser (tức người gửi là đối phương).
+   */
   async getFriendPending(
     currentUserId: number,
     queryDto: QueryFriendDto,
@@ -372,6 +433,12 @@ export class FriendsService {
   }
 
   // Fix #4: DB-level pagination và filter, giống getFriendsList
+  /**
+   * Lấy danh sách bạn bè của một user bất kỳ theo userId, có phân trang và tìm kiếm.
+   *
+   * Hàm này dùng cho màn hình profile hoặc API public nội bộ,
+   * nơi caller cần truy vấn danh sách bạn của người khác thay vì chính mình.
+   */
   async getUserFriends(
     userId: number,
     queryDto: QueryFriendDto,
@@ -419,6 +486,12 @@ export class FriendsService {
 
   // ─── Private Helpers ──────────────────────────────────────────────────────
 
+  /**
+   * Chuẩn hóa object user trước khi trả ra response.
+   *
+   * Mục tiêu là giới hạn field đầu ra theo hợp đồng API,
+   * tránh trả dư dữ liệu không cần thiết từ entity quan hệ.
+   */
   private mapUserInfo(user: any) {
     return {
       id: user.id,

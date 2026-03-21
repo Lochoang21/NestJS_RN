@@ -33,6 +33,17 @@ export class FriendsGateway
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Xử lý khi client kết nối vào namespace friends.
+   *
+   * Luồng xác thực:
+   * - Lấy token từ handshake.auth.token hoặc Authorization header.
+   * - Verify JWT để lấy userId.
+   * - Gắn userId vào client.data để dùng lại trong lifecycle.
+   * - Join room theo định danh user để nhận event cá nhân hóa.
+   *
+   * Nếu thiếu token hoặc token sai, kết nối sẽ bị ngắt ngay.
+   */
   handleConnection(client: Socket) {
     try {
       const token =
@@ -62,6 +73,12 @@ export class FriendsGateway
   // Fix #1: Xử lý disconnect — Socket.IO tự rời room,
   // nhưng implement interface giúp log và mở rộng sau này
   // (vd: cập nhật trạng thái online/offline vào Redis)
+  /**
+   * Hook được gọi khi client ngắt kết nối.
+   *
+   * Hiện tại chỉ lấy userId để làm điểm mở rộng cho các tác vụ hậu kỳ
+   * như cập nhật lastSeen hoặc đồng bộ trạng thái online/offline.
+   */
   handleDisconnect(client: Socket) {
     const userId = client.data?.userId;
     if (userId) {
@@ -71,6 +88,9 @@ export class FriendsGateway
 
   // ─── Emit Helpers (Fix #2: payload có type cụ thể, không dùng any) ──────────
 
+  /**
+   * Gửi sự kiện có lời mời kết bạn mới cho đúng người nhận.
+   */
   emitFriendRequestCreated(
     targetUserId: number,
     payload: FriendRequestCreatedEvent,
@@ -80,6 +100,9 @@ export class FriendsGateway
       .emit('friend:request:received', payload);
   }
 
+  /**
+   * Gửi sự kiện lời mời đã được chấp nhận cho người đã gửi lời mời.
+   */
   emitFriendRequestAccepted(
     targetUserId: number,
     payload: FriendRequestAcceptedEvent,
@@ -89,6 +112,9 @@ export class FriendsGateway
       .emit('friend:request:accepted', payload);
   }
 
+  /**
+   * Gửi sự kiện lời mời đã bị hủy cho người nhận trước đó.
+   */
   emitFriendRequestCancelled(
     targetUserId: number,
     payload: FriendRequestCancelledEvent,
@@ -98,6 +124,9 @@ export class FriendsGateway
       .emit('friend:request:cancelled', payload);
   }
 
+  /**
+   * Gửi sự kiện hủy kết bạn cho người còn lại trong quan hệ.
+   */
   emitUnfriended(targetUserId: number, payload: UnfriendedEvent): void {
     this.server.to(`user:${targetUserId}`).emit('friend:unfriended', payload);
   }
