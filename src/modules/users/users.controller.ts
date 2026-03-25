@@ -4,6 +4,7 @@ import {
   Post,
   Body,
   Patch,
+  Put,
   Param,
   Delete,
   Query,
@@ -17,6 +18,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from '@/auth/passport/jwt-auth.guard';
 import { ApiTags } from '@nestjs/swagger';
 import { SearchFriendUserDto } from './dto/search-friend-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 
 @ApiTags('users')
 @Controller('users')
@@ -54,6 +56,12 @@ export class UsersController {
   @Patch()
   update(@Body() updateUserDto: UpdateUserDto) {
     return this.usersService.update(updateUserDto);
+  }
+
+  @Put('profile')
+  @UseGuards(JwtAuthGuard)
+  updateMe(@Request() req, @Body() updateMeDto: UpdateMeDto) {
+    return this.usersService.updateMe(req.user.id, updateMeDto);
   }
 
   @Delete(':id')

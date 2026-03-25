@@ -1,5 +1,5 @@
 /* eslint-disable prettier/prettier */
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
@@ -14,6 +14,7 @@ import {
 } from '@/auth/dto/create-auth.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 import { Friend } from '../friends/entities/friend.entity';
 import { FriendStatus } from '../friends/enums/friend-status.enum';
 import { SearchFriendUserDto } from './dto/search-friend-user.dto';
@@ -229,6 +230,38 @@ export class UsersService {
 
     await this.userRepository.update(updateUserDto.id, updateUserDto);
     return { affected: 1 };
+  }
+
+  async updateMe(userId: number, updateMeDto: UpdateMeDto) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('Người dùng không tồn tại');
+    }
+
+    const allowedFields: UpdateMeDto = {
+      name: updateMeDto.name,
+      phone: updateMeDto.phone,
+      address: updateMeDto.address,
+      image: updateMeDto.image,
+      bio: updateMeDto.bio,
+    };
+
+    Object.assign(user, allowedFields);
+    const savedUser = await this.userRepository.save(user);
+
+    return {
+      id: savedUser.id,
+      name: savedUser.name,
+      email: savedUser.email,
+      phone: savedUser.phone,
+      bio: savedUser.bio,
+      address: savedUser.address,
+      image: savedUser.image,
+      isActive: savedUser.isActive,
+      createdAt: savedUser.createdAt,
+      updatedAt: savedUser.updatedAt,
+    };
   }
 
   async remove(id: number) {
