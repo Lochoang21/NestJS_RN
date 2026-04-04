@@ -53,6 +53,16 @@ export class FriendsController {
   }
 
   /**
+   * Từ chối lời mời kết bạn — cập nhật trạng thái resource → PATCH
+   * PATCH /friends/request/reject
+   */
+  @Patch('request/reject')
+  @ResponseMessage('Từ chối lời mời kết bạn thành công')
+  rejectRequest(@Body() createFriendDto: CreateFriendDto, @Request() req) {
+    return this.friendsService.rejectRequest(req.user.id, createFriendDto);
+  }
+
+  /**
    * Hủy lời mời đã gửi — xóa/thu hồi resource → DELETE
    * DELETE /friends/request
    */

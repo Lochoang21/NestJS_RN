@@ -11,6 +11,7 @@ import {
   FriendRequestCreatedEvent,
   FriendRequestAcceptedEvent,
   FriendRequestCancelledEvent,
+  FriendRequestRejectedEvent,
   UnfriendedEvent,
 } from './interfaces/friend.interface';
 
@@ -122,6 +123,18 @@ export class FriendsGateway
     this.server
       .to(`user:${targetUserId}`)
       .emit('friend:request:cancelled', payload);
+  }
+
+  /**
+   * Gửi sự kiện lời mời đã bị từ chối cho người đã gửi lời mời.
+   */
+  emitFriendRequestRejected(
+    targetUserId: number,
+    payload: FriendRequestRejectedEvent,
+  ): void {
+    this.server
+      .to(`user:${targetUserId}`)
+      .emit('friend:request:rejected', payload);
   }
 
   /**

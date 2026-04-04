@@ -15,6 +15,7 @@ import {
   PaginatedFriends,
   PendingRequestItem,
 } from './interfaces/friend.interface';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class FriendsService {
@@ -52,7 +53,9 @@ export class FriendsService {
    * để gửi thông báo WebSocket.
    */
   private getOtherId(record: Friend, currentUserId: number): number {
-    return record.userId1 === currentUserId ? record.userId2 : record.userId1;
+    return Number(record.userId1) === Number(currentUserId)
+      ? Number(record.userId2)
+      : Number(record.userId1);
   }
 
   // ─── Mutations ────────────────────────────────────────────────────────────
@@ -228,6 +231,65 @@ export class FriendsService {
   }
 
   /**
+   * Từ chối lời mời kết bạn đang chờ xử lý.
+   *
+   * Quy tắc:
+   * - Chỉ người nhận lời mời mới được từ chối.
+   * - Người gửi không được tự từ chối lời mời do chính mình tạo.
+   *
+   * Hiện tại hệ thống dùng trạng thái CANCELLED cho cả hai trường hợp:
+   * - Người gửi tự hủy lời mời.
+   * - Người nhận từ chối lời mời.
+   *
+   * API và WebSocket event được tách riêng để client phân biệt hành vi nghiệp vụ.
+   */
+  async rejectRequest(
+    currentUserId: number,
+    createFriendDto: CreateFriendDto,
+  ): Promise<Friend> {
+    const { targetUserId } = createFriendDto;
+    const { userId1, userId2 } = this.normalizeUserIds(
+      currentUserId,
+      targetUserId,
+    );
+
+    return this.friendRepository.manager.transaction(async (manager) => {
+      const repo = manager.getRepository(Friend);
+
+      const friendRequest = await repo.findOne({
+        where: { userId1, userId2, status: FriendStatus.PENDING },
+      });
+
+      if (!friendRequest) {
+        throw new BadRequestException('Yêu cầu kết bạn không tồn tại');
+      }
+
+      // Chỉ người NHẬN mới được reject
+      if (friendRequest.actionUserId === currentUserId) {
+        throw new ForbiddenException(
+          'Bạn không thể từ chối lời mời do chính mình gửi',
+        );
+      }
+
+      friendRequest.status = FriendStatus.CANCELLED;
+      friendRequest.actionUserId = currentUserId;
+      const saved = await repo.save(friendRequest);
+
+      // Thông báo cho người đã gửi lời mời rằng yêu cầu bị từ chối
+      const requesterId = this.getOtherId(saved, currentUserId);
+      this.friendsGateway.emitFriendRequestRejected(requesterId, {
+        friendId: saved.id,
+        fromUserId: currentUserId,
+        toUserId: requesterId,
+        status: saved.status,
+        updatedAt: saved.updatedAt,
+      });
+
+      return saved;
+    });
+  }
+
+  /**
    * Hủy lời mời kết bạn đang chờ xử lý.
    *
    * Quy tắc:
@@ -367,7 +429,8 @@ export class FriendsService {
       .getManyAndCount();
 
     const result = friendships.map((f) => {
-      const other = f.userId1 === currentUserId ? f.user2 : f.user1;
+      const other =
+        Number(f.userId1) === Number(currentUserId) ? f.user2 : f.user1;
       return this.mapUserInfo(other);
     });
 
@@ -416,7 +479,8 @@ export class FriendsService {
       .getManyAndCount();
 
     const result: PendingRequestItem[] = requests.map((f) => {
-      const sender = f.userId1 === currentUserId ? f.user2 : f.user1;
+      const sender =
+        Number(f.userId1) === Number(currentUserId) ? f.user2 : f.user1;
       return {
         id: f.id,
         userId1: f.userId1,
@@ -471,7 +535,7 @@ export class FriendsService {
       .getManyAndCount();
 
     const result = friendships.map((f) => {
-      const other = f.userId1 === userId ? f.user2 : f.user1;
+      const other = Number(f.userId1) === Number(userId) ? f.user2 : f.user1;
       return this.mapUserInfo(other);
     });
 
@@ -492,7 +556,7 @@ export class FriendsService {
    * Mục tiêu là giới hạn field đầu ra theo hợp đồng API,
    * tránh trả dư dữ liệu không cần thiết từ entity quan hệ.
    */
-  private mapUserInfo(user: any) {
+  private mapUserInfo(user: User) {
     return {
       id: user.id,
       name: user.name,

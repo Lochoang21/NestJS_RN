@@ -155,29 +155,22 @@ export class PostsService {
   }
 
   async findImagesByAuthor(userId: number) {
-    const posts = await this.postRepository.find({
-      where: { userId, isDeleted: 0 },
-      select: ['id'],
-      order: { createdAt: 'DESC' },
-    });
-
-    const postIds = posts.map((post) => post.id);
-
-    if (postIds.length === 0) {
-      return [];
-    }
-
     const images = await this.mediaRepository
       .createQueryBuilder('media')
-      .where('media.mediable_id IN (:...postIds)', { postIds })
+      .innerJoin(
+        Post,
+        'post',
+        'post.id = media.mediable_id AND post.is_deleted = 0',
+      )
+      .where('post.user_id = :userId', { userId })
       .andWhere('media.mediable_type = :type', { type: MediableType.POST })
       .andWhere('media.file_type = :fileType', { fileType: FileType.IMAGE })
       .andWhere('media.is_deleted = 0')
-      .select(['media.file_path'])
-      .orderBy('media.created_at', 'DESC')
+      .select(['media.filePath'])
+      .orderBy('media.createdAt', 'DESC')
       .getMany();
 
-    return images.map((img) => img.filePath);
+    return images.map((img) => img.filePath).filter(Boolean);
   }
 
   async findOne(id: number, currentUserId?: number): Promise<any> {

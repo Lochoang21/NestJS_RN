@@ -26,6 +26,14 @@ export interface FriendRequestCancelledEvent {
   updatedAt: Date;
 }
 
+export interface FriendRequestRejectedEvent {
+  friendId: number;
+  fromUserId: number;
+  toUserId: number;
+  status: FriendStatus;
+  updatedAt: Date;
+}
+
 export interface UnfriendedEvent {
   friendId: number;
   fromUserId: number;
