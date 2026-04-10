@@ -16,6 +16,11 @@ import {
   PendingRequestItem,
 } from './interfaces/friend.interface';
 import { User } from '../users/entities/user.entity';
+import { NotificationService } from '../notifications/notifications.service';
+import {
+  NotificationType,
+  ReferenceType,
+} from '../notifications/enums/notification-type.enum';
 
 @Injectable()
 export class FriendsService {
@@ -28,6 +33,7 @@ export class FriendsService {
     private readonly usersService: UsersService,
 
     private readonly friendsGateway: FriendsGateway,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -146,6 +152,15 @@ export class FriendsService {
             createdAt: saved.createdAt,
           });
 
+          await this.notificationService.createNotification({
+            userId: targetUserId,
+            actorId: currentUserId,
+            type: NotificationType.FRIEND_REQUEST,
+            referenceId: saved.id,
+            referenceType: ReferenceType.USER,
+            content: 'Đã gửi lời mời kết bạn cho bạn',
+          });
+
           return saved;
         }
 
@@ -168,6 +183,15 @@ export class FriendsService {
         toUserId: targetUserId,
         status: saved.status,
         createdAt: saved.createdAt,
+      });
+
+      await this.notificationService.createNotification({
+        userId: targetUserId,
+        actorId: currentUserId,
+        type: NotificationType.FRIEND_REQUEST,
+        referenceId: saved.id,
+        referenceType: ReferenceType.USER,
+        content: 'Đã gửi lời mời kết bạn cho bạn',
       });
 
       return saved;
@@ -224,6 +248,15 @@ export class FriendsService {
         userId2: saved.userId2,
         status: saved.status,
         updatedAt: saved.updatedAt,
+      });
+
+      await this.notificationService.createNotification({
+        userId: requesterId,
+        actorId: currentUserId,
+        type: NotificationType.FRIEND_ACCEPT,
+        referenceId: saved.id,
+        referenceType: ReferenceType.USER,
+        content: 'Đã chấp nhận lời mời kết bạn của bạn',
       });
 
       return saved;

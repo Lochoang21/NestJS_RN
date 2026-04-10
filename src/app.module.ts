@@ -12,6 +12,7 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { TransformInterceptor } from './core/transform.interceptor';
 import { FriendsModule } from './modules/friends/friends.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 const toBoolean = (value: string | undefined, defaultValue: boolean) => {
   if (value === undefined) {
@@ -27,6 +28,7 @@ const toBoolean = (value: string | undefined, defaultValue: boolean) => {
     AuthModule,
     PostsModule,
     FriendsModule,
+    NotificationsModule,
     ConfigModule.forRoot({ isGlobal: true }),
 
     TypeOrmModule.forRootAsync({

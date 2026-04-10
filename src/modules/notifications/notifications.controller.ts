@@ -1,47 +1,41 @@
 import {
   Controller,
+  DefaultValuePipe,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
+  ParseIntPipe,
+  Patch,
+  Query,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
-import { NotificationsService } from './notifications.service';
-import { CreateNotificationDto } from './dto/create-notification.dto';
-import { UpdateNotificationDto } from './dto/update-notification.dto';
+import { NotificationService } from './notifications.service';
 import { ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from '@/auth/passport/jwt-auth.guard';
 
 @ApiTags('notifications')
 @Controller('notifications')
-export class NotificationsController {
-  constructor(private readonly notificationsService: NotificationsService) {}
-
-  @Post()
-  create(@Body() createNotificationDto: CreateNotificationDto) {
-    return this.notificationsService.create(createNotificationDto);
-  }
+@UseGuards(JwtAuthGuard)
+export class NotificationController {
+  constructor(private readonly notificationService: NotificationService) { }
 
   @Get()
-  findAll() {
-    return this.notificationsService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.notificationsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body() updateNotificationDto: UpdateNotificationDto,
+  async getMyNotifications(
+    @Request() req,
+    @Query('current', new DefaultValuePipe(1), ParseIntPipe) current: number,
+    @Query('pageSize', new DefaultValuePipe(10), ParseIntPipe)
+    pageSize: number,
   ) {
-    return this.notificationsService.update(+id, updateNotificationDto);
+    return this.notificationService.findByUser(req.user.id, current, pageSize);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.notificationsService.remove(+id);
+  @Patch(':id/read')
+  async markAsRead(@Param('id', ParseIntPipe) id: number, @Request() req) {
+    return this.notificationService.markAsRead(id, req.user.id);
+  }
+
+  @Patch('read-all')
+  async markAllAsRead(@Request() req) {
+    return this.notificationService.markAllAsRead(req.user.id);
   }
 }

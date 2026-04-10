@@ -18,6 +18,11 @@ import { MediableType } from './enums/mediable-type.enum';
 import { LikeableType } from './enums/likeable-type.enum';
 import { FileType } from './enums/file-type.enum';
 import { PostPrivacy } from './enums/post-privacy.enum';
+import { NotificationService } from '../notifications/notifications.service';
+import {
+  NotificationType,
+  ReferenceType,
+} from '../notifications/enums/notification-type.enum';
 
 @Injectable()
 export class PostsService {
@@ -34,6 +39,7 @@ export class PostsService {
     private readonly commentRepository: Repository<Comment>,
     @InjectRepository(Media)
     private readonly mediaRepository: Repository<Media>,
+    private readonly notificationService: NotificationService,
   ) { }
 
   async create(createPostDto: CreatePostDto, userId: number) {
@@ -303,6 +309,15 @@ export class PostsService {
     });
     await this.likeRepository.save(like);
 
+    await this.notificationService.createNotification({
+      userId: post.userId,
+      actorId: userId,
+      type: NotificationType.LIKE,
+      referenceId: postId,
+      referenceType: ReferenceType.POST,
+      content: 'Đã thích bài viết của bạn',
+    });
+
     return { message: 'Đã thích bài viết', liked: true };
   }
 
@@ -369,6 +384,16 @@ export class PostsService {
       parentCommentId: parentCommentId || null
     });
     await this.commentRepository.save(comment);
+
+    await this.notificationService.createNotification({
+      userId: post.userId,
+      actorId: userId,
+      type: NotificationType.COMMENT,
+      referenceId: postId,
+      referenceType: ReferenceType.POST,
+      content: 'Đã bình luận lên bài viết của bạn',
+    });
+
     return { message: 'Bình luận bài viết thành công' };
   }
 

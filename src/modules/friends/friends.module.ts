@@ -13,6 +13,7 @@ import { Friend } from './entities/friend.entity';
 // Yêu cầu UsersModule phải export UsersService:
 //   @Module({ exports: [UsersService] }) export class UsersModule {}
 import { UsersModule } from '../users/users.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UsersModule } from '../users/users.module';
 
     // Fix #3: Import module thay vì inject repo trực tiếp
     UsersModule,
+    NotificationsModule,
   ],
   controllers: [FriendsController],
   providers: [FriendsService, FriendsGateway],
