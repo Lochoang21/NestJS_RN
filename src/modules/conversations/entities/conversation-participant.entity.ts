@@ -5,12 +5,15 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
+  Index,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 import { User } from '../../users/entities/user.entity';
 import { ConversationParticipantRole } from '../enums/conversation-participant-role.enum';
 
 @Entity('conversation_participants')
+@Index('idx_participants_conversation_id', ['conversationId'])
+@Index('idx_participants_user_id', ['userId'])
 export class ConversationParticipant {
   @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
   id: number;

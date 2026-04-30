@@ -12,5 +12,6 @@ import { ConversationParticipant } from './entities/conversation-participant.ent
   ],
   controllers: [ConversationsController],
   providers: [ConversationsService],
+  exports: [ConversationsService],
 })
-export class ConversationsModule {}
+export class ConversationsModule { }

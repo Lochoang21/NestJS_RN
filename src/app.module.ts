@@ -13,6 +13,10 @@ import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handleba
 import { TransformInterceptor } from './core/transform.interceptor';
 import { FriendsModule } from './modules/friends/friends.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
+import { MessagesModule } from './modules/messages/messages.module';
+import { ParticipantsModule } from './modules/participants/participants.module';
+import { ChatModule } from './modules/conversations/chat.module';
 
 const toBoolean = (value: string | undefined, defaultValue: boolean) => {
   if (value === undefined) {
@@ -29,6 +33,10 @@ const toBoolean = (value: string | undefined, defaultValue: boolean) => {
     PostsModule,
     FriendsModule,
     NotificationsModule,
+    ConversationsModule,
+    MessagesModule,
+    ParticipantsModule,
+    ChatModule,
     ConfigModule.forRoot({ isGlobal: true }),
 
     TypeOrmModule.forRootAsync({
@@ -101,4 +109,4 @@ const toBoolean = (value: string | undefined, defaultValue: boolean) => {
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
